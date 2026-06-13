@@ -1,0 +1,66 @@
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+
+      "Bash(npm run:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run start:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm install:*)",
+      "Bash(npm install --production:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push origin:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+
+      "Bash(rsync:*)",
+      "Bash(ssh pi@*)",
+      "Bash(ssh-keyscan:*)",
+      "Bash(scp:*)",
+
+      "Bash(arecord:*)",
+      "Bash(aplay:*)",
+      "Bash(sox:*)",
+      "Bash(ffmpeg:*)",
+
+      "Bash(pm2:*)",
+
+      "Bash(curl:*)",
+      "Bash(ping:*)",
+      "Bash(hostname:*)",
+
+      "Bash(mkdir -p:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(chmod +x:*)",
+      "Bash(bash scripts/*:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(sudo rm:*)",
+      "Bash(sudo apt remove:*)",
+      "Bash(sudo apt purge:*)"
+    ]
+  }
+}

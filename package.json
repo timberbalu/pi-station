@@ -1,0 +1,32 @@
+{
+  "name": "@pi-station/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MeetPaper Station — local audio ingestion server for Voice Intelligence",
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "capture": "tsx src/capture.ts",
+    "relay": "tsx src/relay.ts",
+    "control": "tsx src/control.ts"
+  },
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "better-sqlite3": "^11.5.0",
+    "ws": "^8.18.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
