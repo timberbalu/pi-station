@@ -3,11 +3,19 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { ControlContext } from './types.js';
 import { registerDashboardRoutes } from './dashboardRoutes.js';
 import { registerMockIngestRoutes } from './mockIngestRoutes.js';
+import { registerMockStationRoutes } from './mockStationRoutes.js';
 import { registerRoutes } from './routes.js';
 import { registerSimulateRoutes } from './simulateRoutes.js';
 
 export async function buildServer(context: ControlContext): Promise<FastifyInstance> {
   const server = Fastify({ logger: false });
+
+  // Accept binary bodies for the mock S3 multipart PUT target.
+  server.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer' },
+    (_request, body, done) => done(null, body),
+  );
 
   server.addHook('onRequest', async (request, reply) => {
     reply.header('Access-Control-Allow-Origin', '*');
@@ -28,6 +36,7 @@ export async function buildServer(context: ControlContext): Promise<FastifyInsta
   await registerDashboardRoutes(server);
   await registerRoutes(server, context);
   await registerMockIngestRoutes(server, context);
+  await registerMockStationRoutes(server, context);
   await registerSimulateRoutes(server, context);
 
   return server;

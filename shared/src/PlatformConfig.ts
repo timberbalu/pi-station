@@ -49,6 +49,13 @@ export interface PlatformConfig {
     readonly url: string;
     readonly token: string;
   };
+  readonly sync: {
+    readonly url: string;
+    readonly healthUrl: string;
+    readonly partSize: number;
+    readonly probeIntervalMs: number;
+    readonly awsRegion: string;
+  };
   readonly hardware: {
     readonly enabledComponents: string;
     readonly enableGpio: boolean;

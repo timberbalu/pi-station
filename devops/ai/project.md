@@ -56,3 +56,19 @@
   - Modified: `MeetStationApp.ts` (host refactor), `index.ts` (component wiring), `core/src/config.ts` (ENABLED_COMPONENTS), `shared/src/PlatformConfig.ts`, `core/src/types.ts` (ComponentStatusSummary, components[] in StationStatusResponse), `.env.example`, `public/app.js` + `index.html` + `styles.css` (components row in dashboard), `test/api.smoke.test.ts` (updated for new constructor)
 - **Test results:** 35 tests / 8 files — all green. typecheck clean. build clean.
 - **Design decisions:** host owns state machine and reconciliation; VoiceComponent exposes `setReconcileCallback`; back-compat status fields still populated from VoiceComponent; unknown ENABLED_COMPONENTS id fails loudly at startup.
+
+## 2026-06-21 — J3b Sync Service (offline → online via S3)
+
+- **Start:** 2026-06-21 12:36 BST
+- **End:** 2026-06-21 12:55 BST
+- **Model/provider:** Claude Opus 4.8 (Cursor)
+- **Prompt:** `devops/ai/prompts/PI_STATION_J3b_sync_service.md`
+- **Outcome:** Host-level four-phase sync (manifest → segments → media to S3 → complete) via presigned URLs. Pi credential-free. Resumable multipart uploads. Connectivity probe drives OFFLINE_BUFFERING → SYNCING as a real signal. Full mock S3 path runs with zero AWS. 48/48 tests green.
+- **Files changed:**
+  - New (core): `sync/StationSyncClient.ts`, `sync/MediaUploader.ts`, `sync/ConnectivityProbe.ts`; `sync/SyncService.ts` (replaced stub); migrations + repositories (`sync_state`, `media_transfer_queue`); types + config (`sync` group); index exports
+  - New (app): `control/mockStationRoutes.ts`; tests `connectivityProbe`, `syncResumable`, `manifestIdempotent`, `syncPhases`, `syncE2E`
+  - New (docs): `docs/SYNC.md` (phases, resumability, mock mode, J4 contracts + `VI_MEDIA_ASSETS`)
+  - Modified: `MeetStationApp.ts` (sync + probe wiring, `/status.sync`), `index.ts` (composition), `control/server.ts` (octet-stream parser + mock station routes), dashboard (`app.js`/`index.html`/`styles.css` sync section), `shared/PlatformConfig.ts`, `.env.example`, `core/package.json` (AWS SDK deps)
+- **Test results:** 48 tests / 13 files — all green. typecheck clean. build clean.
+- **Design decisions:** sync lives in `core/` (platform capability); presigned-URL fetch path (no AWS creds on Pi); S3 upload_id = resume token (no bytes_sent tracking); media phase marks empty types `skipped` so it never blocks; mock station + mock S3 honour the simulated-network flag.
+- **Deviations:** AWS SDK deps added per spec but not imported (presigned-URL PUT via fetch needs no SDK auth on the Pi); audio fileSize includes the 44-byte WAV header.

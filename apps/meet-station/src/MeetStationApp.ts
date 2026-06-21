@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import type { Logger } from 'pino';
 
-import type { HardwareController, PlatformConfig, Repositories } from '@pi-station/core';
+import type {
+  ConnectivityProbe,
+  HardwareController,
+  PlatformConfig,
+  Repositories,
+  SyncService,
+} from '@pi-station/core';
 import { StationEventBus, StationStateMachine } from '@pi-station/core';
 import { ReportGenerator } from './report/ReportGenerator.js';
 import type { StationComponent } from './components/StationComponent.js';
@@ -30,6 +36,8 @@ export class MeetStationApp {
     private readonly components: StationComponent[],
     private readonly reportGenerator: ReportGenerator,
     private readonly log: Logger,
+    private readonly syncService?: SyncService,
+    private readonly connectivityProbe?: ConnectivityProbe,
   ) {
     this.mockIngestAvailable = config.relay.mockIngestAvailable;
   }
@@ -61,10 +69,32 @@ export class MeetStationApp {
       if (this.currentSession) {
         this.repositories.sessions.updateState(this.currentSession.sessionId, event.to, event.at);
       }
+      // Probe the network only while we are buffering offline — a real signal for recovery.
+      if (this.connectivityProbe) {
+        if (event.to === 'OFFLINE_BUFFERING') {
+          this.connectivityProbe.start();
+        } else if (event.from === 'OFFLINE_BUFFERING') {
+          this.connectivityProbe.stop();
+        }
+      }
+    });
+
+    // When the probe sees the network return, run a sync cycle for the live session.
+    this.connectivityProbe?.onOnline(() => {
+      void this.handleConnectivityOnline();
     });
   }
 
+  private async handleConnectivityOnline(): Promise<void> {
+    if (!this.currentSession || !this.syncService) {
+      return;
+    }
+    await this.syncService.runSyncCycle(this.currentSession.sessionId);
+    this.reconcileOperationalState();
+  }
+
   async shutdown(): Promise<void> {
+    this.connectivityProbe?.stop();
     for (const component of this.components) {
       await component.shutdown();
     }
@@ -177,6 +207,11 @@ export class MeetStationApp {
       'REPORT_READY',
     );
 
+    // Best-effort full sync (manifest → segments → media → complete) before the report.
+    if (this.syncService) {
+      await this.syncService.syncOnStop(this.currentSession.sessionId);
+    }
+
     this.latestReport = this.reportGenerator.generate(this.currentSession);
     this.emitEvent('report_generated', 'info', `Report generated for ${this.currentSession.sessionId}`);
     this.transition('REPORT_READY');
@@ -221,6 +256,9 @@ export class MeetStationApp {
     this.emitEvent('network_up_simulated', 'info', 'Mock ingest restored');
     for (const component of this.components) {
       await component.flush();
+    }
+    if (this.syncService && this.currentSession) {
+      await this.syncService.runSyncCycle(this.currentSession.sessionId);
     }
     this.reconcileOperationalState();
   }
@@ -313,6 +351,7 @@ export class MeetStationApp {
         last_state: this.hardware.getLastState(),
       },
       components: componentStatuses,
+      sync: this.syncService?.getSyncStatus(this.currentSession?.sessionId ?? null) ?? null,
       last_events: this.repositories.sessionEvents.listRecent(10),
     };
   }

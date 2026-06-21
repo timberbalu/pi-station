@@ -6,6 +6,16 @@
 
 STATUS: DONE
 
+**Prompt:** `devops/ai/prompts/PI_STATION_J3b_sync_service.md`
+
+**Job:** Host-level four-phase SyncService (manifest → segments → media to S3 via presigned URLs → sync-complete). Resumable multipart uploads, connectivity probe, mock S3 path, dashboard SYNCING progress. 48 tests green.
+
+**Completed:** 2026-06-21
+
+---
+
+## Previous job (J3 — complete)
+
 **Prompt:** `devops/ai/prompts/PI_STATION_J3_component_platform.md`
 
 **Job:** Refactor MeetStationApp into a generic component host. VoiceComponent wraps existing capture/relay. VideoComponent stub added. Config-driven registry. 35 tests green.
@@ -60,10 +70,9 @@ J1 built the full mock-first MVP in `src/`. All tests green, build clean, mock d
 
 ### Next job
 
-- **J3b — Sync Service** (`prompts/PI_STATION_J3b_sync_service.md`): phased offline→online sync via S3 presigned URLs. Resumable. No data loss.
+- **J4 — apm ingest receiver**: manifest + segment + media (presign/confirm) + sync-complete on the PHP/apm side. Contracts + `VI_MEDIA_ASSETS` table specced in `docs/SYNC.md`.
 
 ### Remaining queued jobs
-- **J3b — Sync Service** (`prompts/PI_STATION_J3b_sync_service.md`): phased offline→online sync via S3 presigned URLs. Resumable. No data loss.
 - **J4 — apm ingest receiver**: manifest + segment + media + sync-complete on PHP/apm side.
 - **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
 - **J6 — VideoComponent + pan/tilt**: libcamera, rolling MP4, AI HAT+ face detection, PCA9685 servo tracking.

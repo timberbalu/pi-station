@@ -6,7 +6,36 @@
 
 ---
 
-## 2026-06-13 (late evening) — J2b platform restructure completed
+## 2026-06-21 — J3: Generic multi-component platform (complete)
+
+**35/35 tests green. Typecheck clean. Build clean. Pushed to main.**
+
+### What was built
+
+- `components/StationComponent.ts` — interface: `init`, `startSession`, `pause`, `resume`, `stopSession`, `flush`, `getStatus`, `contributeToReport`, `shutdown`. Also defines `ComponentContext`, `ComponentStatus`, `ComponentReportSection`.
+- `components/voice/VoiceComponent.ts` — wraps existing `CaptureService` + `RelayService` with zero behavioural changes. Exposes `setReconcileCallback` so the host drives state machine transitions.
+- `components/video/VideoComponent.ts` — dormant stub. Registers, reports `healthy: true, buffering: false, queuedItems: 0`. Proves the abstraction.
+- `components/registry.ts` — parses `ENABLED_COMPONENTS` env var. Fails loudly on unknown IDs. `voice` = pre-constructed VoiceComponent; `video` = new VideoComponent(). Type-safe `as const` tuple of known IDs.
+- `MeetStationApp` constructor now accepts `StationComponent[]` — all lifecycle methods fan out to every component.
+- `reconcileOperationalState` folds over `components[].getStatus().buffering` — any component buffering → `OFFLINE_BUFFERING`.
+- `GET /status` gains `components: ComponentStatus[]` array; back-compat `mic`/`stt`/`relay`/`buffer` fields preserved.
+- Dashboard gets a Components row — card per component showing healthy/buffering/queued state.
+- `test/componentHost.test.ts` — 11 tests: registry, VideoComponent lifecycle, fan-out.
+- `test/aggregateState.test.ts` — 17 tests: pure aggregate-buffering logic for 1 and 2 components.
+- `docs/COMPONENTS.md` — how to add a new component.
+
+### Verified
+
+- `ENABLED_COMPONENTS=voice,video` boots with dormant video card
+- `ENABLED_COMPONENTS=voice` boots without it
+- Unknown ID → clear startup error
+- All 7 original tests still green (35 total: 7 original + 11 componentHost + 17 aggregateState)
+
+### SyncService state (important for J3b)
+
+`core/src/sync/SyncService.ts` is a **clean stub** — a single empty class with a one-line comment: "Placeholder for J3b. The platform-level sync coordinator lives here once manifest/media upload phases exist." J3b can build on this directly with no reconciliation needed.
+
+---
 
 ### What changed
 
@@ -384,13 +413,53 @@ MeetPaper Station was previously a voice-only hardcode — `MeetStationApp` dire
 
 ---
 
+## 2026-06-21 — J3b Sync Service (offline → online via S3)
+
+### Architectural decision
+
+Added the host-level `SyncService` that moves a session to the cloud in four gated phases when the network returns. The central rule from the ecosystem: **large binaries go straight to S3 via presigned URLs, never through PHP/Elastic Beanstalk.** The Pi holds no AWS credentials — it only exchanges tiny JSON coordination requests (manifest / presign / confirm / sync-complete) and PUTs bytes directly to presigned S3 URLs.
+
+**Why sync lives in `core/`, not the app:** the sync_state + media_transfer_queue tables, the orchestration, and the connectivity probe are platform capabilities any future edge app inherits. SyncService depends only on repositories + an HTTP client + an uploader — it reads audio chunks from the `audioChunks` repo and the relay queue depth directly, so it is decoupled from the meet-station app's RelayService. The app wires it together in `index.ts` (composition root) and passes it into the host.
+
+### What was built
+
+- **Two new tables** (`core/src/db/migrations.ts`): `sync_state` (per-phase status) + `media_transfer_queue` (resumable per-chunk upload state, UNIQUE on session+type+chunk).
+- **Repositories**: `SyncStateRepository`, `MediaTransferRepository`; added `relayQueue.countBySession`.
+- **`StationSyncClient`** (`core/src/sync/`): interface + `HttpStationSyncClient` — manifest / presign / confirm / sync-complete. Treats 409 as idempotent "existing".
+- **`MediaUploader`**: resumable S3 multipart via presigned URLs. The S3 upload_id is the resume token; confirmed parts persist in `parts_json`. On re-run it requests presigned URLs only for parts with `part_number > max confirmed`. Plain `fetch` PUT to presigned URLs (no SDK auth on the Pi). Injectable `httpPut` for tests.
+- **`ConnectivityProbe`**: polls a health endpoint; emits `online`/`offline` **only on transitions** (no repeat firing for sustained state). Injectable `healthCheck` for tests.
+- **`SyncService`**: four-phase orchestrator. Phase gating: manifest → segments (relay depth 0) → media (audio now, video seam for J6) → complete. `runSyncCycle` (resumes from failed phase), `syncOnStop` (best-effort at stop), `getSyncStatus` (dashboard).
+- **Mock station + mock S3 routes** (`apps/meet-station/src/control/mockStationRoutes.ts`): the Pi hosts the apm endpoints itself at `/mock/station/*` and a mock S3 PUT at `/mock/s3/upload`. All honour the simulated-network flag, so `/simulate/network/down` breaks sync like a real outage. Added an `application/octet-stream` body parser for the binary PUT.
+- **Host wiring**: `MeetStationApp` gained optional `syncService` + `connectivityProbe`. `stop()` runs `syncOnStop` before report; `simulateNetworkUp` triggers `runSyncCycle`; the probe starts on entering OFFLINE_BUFFERING and stops on leaving; `online` → run cycle. `/status` gained a `sync` field.
+- **Dashboard**: a "Sync to Cloud" section renders per-phase progress including per-chunk audio/video status (✓ / ↻ / ○ / —).
+- **AWS SDK deps** added to `core/package.json` (`@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`) per the spec; not yet imported (presigned-URL fetch path needs no SDK auth on the Pi) — kept for the forward S3-side path.
+- **`docs/SYNC.md`**: the four phases, resumability, S3 layout, mock mode, and the precise J4 endpoint contracts + `VI_MEDIA_ASSETS` table.
+
+### Tests (13 files, 48 green; +6 files, +13 tests this job)
+
+- `connectivityProbe.test.ts` (6): online/offline fire once per transition; flapping; thrown check = offline.
+- `syncResumable.test.ts`: drop after part 1 → resume requests only `from_part=2`, reuses upload_id, finishes & confirms.
+- `manifestIdempotent.test.ts`: first 200 existing=false, second 409 existing=true; 503 when network down.
+- `syncPhases.test.ts` (3): manifest failure halts before phase 2; pending segment halts before phase 3; clean run = all four in order.
+- `syncE2E.test.ts`: full path through the real server + mock S3 — on stop, manifest confirmed, segments synced, audio chunks uploaded, sync_complete true.
+
+### Key choices / deviations
+
+- Audio `fileSize` = chunk bytes + 44 (WAV header) when enqueuing media.
+- `mediaTransfer` enqueue is idempotent (INSERT OR IGNORE) — re-running phase 3 never duplicates rows.
+- Media phase marks a type `skipped` when there are no chunks of that type (video today), so the phase never blocks.
+- SyncService is in `core/` (exported) replacing the J3b placeholder stub.
+
+---
+
 ## Open issues
 
 | # | Issue | Status |
 |---|---|---|
 | 1 | arecord device string confirmation on Pi (`arecord -l`) | ✅ Confirmed: `plughw:2,0` (card 2) |
 | 2 | ElevenLabs Scribe v2 WS API format verification | ⏳ pending — mock provider works |
-| 3 | `voice.apresmeet.com/ws/station/ingest` receiver endpoint (apm side) | ⏳ not built (J4) — mock ingest covers demo |
+| 3 | apm-side station endpoints (manifest/presign/confirm/sync-complete + ingest) | ⏳ not built (J4) — mock station + mock S3 cover demo; contracts specced in `docs/SYNC.md` |
 | 4 | Session pairing server-side validation (`PAIRING_MODE=remote`) | ⏳ not built (J4) — local pairing works for demo |
+| 7 | AWS SDK deps added but unused (presigned-URL fetch path needs no SDK) | ℹ️ intentional — kept for forward S3-side work |
 | 5 | pm2 / systemd startup hook on Pi | ✅ Configured (`pm2-pistation.service`) |
 | 6 | USB-C power-bank UPS (no battery backup on hand) | ⏳ to acquire — not blocking demo |

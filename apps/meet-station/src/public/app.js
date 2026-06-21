@@ -1,6 +1,8 @@
 const statusGrid = document.querySelector('#status-grid');
 const componentsSection = document.querySelector('#components-section');
 const componentsGrid = document.querySelector('#components-grid');
+const syncSection = document.querySelector('#sync-section');
+const syncPhasesEl = document.querySelector('#sync-phases');
 const transcriptEl = document.querySelector('#transcript');
 const eventsEl = document.querySelector('#events');
 const partialEl = document.querySelector('#partial');
@@ -68,6 +70,7 @@ function renderStatus(status) {
   partialEl.textContent = status.stt.current_partial ? `Partial: ${status.stt.current_partial}` : '';
 
   renderComponents(status.components || []);
+  renderSync(status.sync);
 
   if (status.state === 'OFFLINE_BUFFERING') {
     bannerEl.hidden = false;
@@ -118,6 +121,82 @@ function renderComponents(components) {
       </article>
     `;
   }).join('');
+}
+
+function phaseIcon(status) {
+  switch (status) {
+    case 'confirmed':
+    case 'synced':
+    case 'complete':
+      return '\u2713'; // check
+    case 'in_progress':
+      return '\u21bb'; // refresh
+    case 'skipped':
+      return '\u2014'; // dash
+    case 'failed':
+      return '\u2715'; // cross
+    default:
+      return '\u25cb'; // circle
+  }
+}
+
+function renderSync(sync) {
+  if (!sync || !sync.session_id) {
+    syncSection.hidden = true;
+    return;
+  }
+
+  syncSection.hidden = false;
+
+  const rows = [];
+  rows.push(phaseRow(phaseIcon(sync.manifest), 'Session manifest', sync.manifest));
+  rows.push(phaseRow(
+    phaseIcon(sync.segments.status),
+    'Transcript segments',
+    `${sync.segments.delivered} / ${sync.segments.total} delivered`,
+  ));
+  rows.push(phaseRow(phaseIcon(sync.audio.status), 'Audio \u2192 S3', sync.audio.status));
+  for (const chunk of sync.audio.chunks) {
+    rows.push(chunkRow(chunk));
+  }
+  rows.push(phaseRow(phaseIcon(sync.video.status), 'Video \u2192 S3', sync.video.status));
+  for (const chunk of sync.video.chunks) {
+    rows.push(chunkRow(chunk));
+  }
+  rows.push(phaseRow(
+    sync.sync_complete ? '\u2713' : '\u25cb',
+    'Sync complete',
+    sync.sync_complete ? 'done' : 'pending',
+  ));
+  if (sync.last_error) {
+    rows.push(`<div class="sync-error">${sync.last_error}</div>`);
+  }
+
+  syncPhasesEl.innerHTML = rows.join('');
+}
+
+function phaseRow(icon, label, detail) {
+  return `
+    <div class="sync-phase">
+      <span class="sync-icon">${icon}</span>
+      <span class="sync-label">${label}</span>
+      <span class="sync-detail">${detail}</span>
+    </div>
+  `;
+}
+
+function chunkRow(chunk) {
+  const name = chunk.s3_key.split('/').pop();
+  const detail = chunk.status === 'uploaded'
+    ? 'uploaded'
+    : `${chunk.status} (part ${chunk.parts_done}/${chunk.parts_total})`;
+  return `
+    <div class="sync-phase sync-chunk">
+      <span class="sync-icon">${phaseIcon(chunk.status === 'uploaded' ? 'complete' : chunk.status)}</span>
+      <span class="sync-label">${name}</span>
+      <span class="sync-detail">${detail}</span>
+    </div>
+  `;
 }
 
 function renderTranscript(segments) {

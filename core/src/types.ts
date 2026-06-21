@@ -138,6 +138,83 @@ export interface SessionSummary {
   stoppedAt: string | null;
 }
 
+export type MediaType = 'audio' | 'video';
+
+export type MediaTransferStatus =
+  | 'pending'
+  | 'presign_requested'
+  | 'uploading'
+  | 'confirming'
+  | 'uploaded'
+  | 'error'
+  | 'skipped';
+
+export type ManifestStatus = 'pending' | 'confirmed' | 'failed';
+export type SegmentsStatus = 'pending' | 'in_progress' | 'synced';
+export type MediaPhaseStatus = 'pending' | 'in_progress' | 'complete' | 'skipped';
+
+export interface ConfirmedPart {
+  partNumber: number;
+  etag: string;
+}
+
+export interface MediaTransferRecord {
+  id: string;
+  sessionId: string;
+  mediaType: MediaType;
+  filePath: string;
+  s3Key: string;
+  chunkIndex: number;
+  fileSize: number;
+  s3UploadId: string | null;
+  partsJson: string;
+  status: MediaTransferStatus;
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SyncStateRecord {
+  sessionId: string;
+  manifestStatus: ManifestStatus;
+  segmentsStatus: SegmentsStatus;
+  audioStatus: MediaPhaseStatus;
+  videoStatus: MediaPhaseStatus;
+  syncComplete: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+export interface MediaChunkStatus {
+  chunk_index: number;
+  s3_key: string;
+  status: MediaTransferStatus;
+  parts_done: number;
+  parts_total: number;
+}
+
+export interface SyncStatusSummary {
+  session_id: string | null;
+  manifest: ManifestStatus;
+  segments: {
+    status: SegmentsStatus;
+    delivered: number;
+    total: number;
+  };
+  audio: {
+    status: MediaPhaseStatus;
+    chunks: MediaChunkStatus[];
+  };
+  video: {
+    status: MediaPhaseStatus;
+    chunks: MediaChunkStatus[];
+  };
+  sync_complete: boolean;
+  last_error: string | null;
+}
+
 export interface ComponentStatusSummary {
   id: string;
   label: string;
@@ -198,6 +275,8 @@ export interface StationStatusResponse {
   };
   /** Each registered component's live status. */
   components: ComponentStatusSummary[];
+  /** Per-phase sync progress for the current session, or null when no session/sync service. */
+  sync: SyncStatusSummary | null;
   last_events: SessionEventRecord[];
 }
 

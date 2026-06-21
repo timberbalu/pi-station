@@ -90,5 +90,35 @@ export function runMigrations(db: Database.Database): void {
       transcript_excerpt TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS sync_state (
+      session_id TEXT PRIMARY KEY,
+      manifest_status TEXT NOT NULL DEFAULT 'pending',
+      segments_status TEXT NOT NULL DEFAULT 'pending',
+      audio_status TEXT NOT NULL DEFAULT 'pending',
+      video_status TEXT NOT NULL DEFAULT 'pending',
+      sync_complete INTEGER NOT NULL DEFAULT 0,
+      last_sync_at TEXT,
+      last_error TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS media_transfer_queue (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      s3_key TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      file_size INTEGER NOT NULL,
+      s3_upload_id TEXT,
+      parts_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(session_id, media_type, chunk_index)
+    );
   `);
 }

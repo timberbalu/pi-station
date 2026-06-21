@@ -4,11 +4,18 @@ import type {
   AudioChunkRecord,
   AudioChunkStatus,
   InsightMarkRecord,
+  ManifestStatus,
+  MediaPhaseStatus,
+  MediaTransferRecord,
+  MediaTransferStatus,
+  MediaType,
   RelayQueueRecord,
   RelayQueueStatus,
+  SegmentsStatus,
   SessionEventRecord,
   SessionRecord,
   StationState,
+  SyncStateRecord,
   TranscriptSegmentRecord,
 } from '../types.js';
 
@@ -105,6 +112,39 @@ function mapInsight(row: Record<string, unknown>): InsightMarkRecord {
     note: row['note'] ? String(row['note']) : null,
     transcriptExcerpt: row['transcript_excerpt'] ? String(row['transcript_excerpt']) : null,
     createdAt: String(row['created_at']),
+  };
+}
+
+function mapMediaTransfer(row: Record<string, unknown>): MediaTransferRecord {
+  return {
+    id: String(row['id']),
+    sessionId: String(row['session_id']),
+    mediaType: String(row['media_type']) as MediaType,
+    filePath: String(row['file_path']),
+    s3Key: String(row['s3_key']),
+    chunkIndex: Number(row['chunk_index']),
+    fileSize: Number(row['file_size']),
+    s3UploadId: row['s3_upload_id'] ? String(row['s3_upload_id']) : null,
+    partsJson: String(row['parts_json']),
+    status: String(row['status']) as MediaTransferStatus,
+    attempts: Number(row['attempts']),
+    lastError: row['last_error'] ? String(row['last_error']) : null,
+    createdAt: String(row['created_at']),
+    updatedAt: String(row['updated_at']),
+  };
+}
+
+function mapSyncState(row: Record<string, unknown>): SyncStateRecord {
+  return {
+    sessionId: String(row['session_id']),
+    manifestStatus: String(row['manifest_status']) as ManifestStatus,
+    segmentsStatus: String(row['segments_status']) as SegmentsStatus,
+    audioStatus: String(row['audio_status']) as MediaPhaseStatus,
+    videoStatus: String(row['video_status']) as MediaPhaseStatus,
+    syncComplete: Number(row['sync_complete']),
+    lastSyncAt: row['last_sync_at'] ? String(row['last_sync_at']) : null,
+    lastError: row['last_error'] ? String(row['last_error']) : null,
+    updatedAt: String(row['updated_at']),
   };
 }
 
@@ -251,6 +291,12 @@ export class RelayQueueRepository {
     const row = this.db.prepare('SELECT COUNT(*) as total FROM relay_queue WHERE status = ?').get(status) as { total: number };
     return row.total;
   }
+
+  countBySession(sessionId: string, status: RelayQueueStatus): number {
+    const row = this.db.prepare('SELECT COUNT(*) as total FROM relay_queue WHERE session_id = ? AND status = ?')
+      .get(sessionId, status) as { total: number };
+    return row.total;
+  }
 }
 
 export class AudioChunksRepository {
@@ -329,6 +375,130 @@ export class InsightMarksRepository {
   }
 }
 
+export class SyncStateRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  /** Returns the existing row, creating a default pending row if absent. */
+  ensure(sessionId: string, now: string): SyncStateRecord {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO sync_state (session_id, updated_at)
+      VALUES (?, ?)
+    `).run(sessionId, now);
+    return this.get(sessionId) as SyncStateRecord;
+  }
+
+  get(sessionId: string): SyncStateRecord | null {
+    const row = this.db.prepare('SELECT * FROM sync_state WHERE session_id = ?')
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return row ? mapSyncState(row) : null;
+  }
+
+  setManifest(sessionId: string, status: ManifestStatus, now: string): void {
+    this.db.prepare('UPDATE sync_state SET manifest_status = ?, updated_at = ? WHERE session_id = ?')
+      .run(status, now, sessionId);
+  }
+
+  setSegments(sessionId: string, status: SegmentsStatus, now: string): void {
+    this.db.prepare('UPDATE sync_state SET segments_status = ?, updated_at = ? WHERE session_id = ?')
+      .run(status, now, sessionId);
+  }
+
+  setAudio(sessionId: string, status: MediaPhaseStatus, now: string): void {
+    this.db.prepare('UPDATE sync_state SET audio_status = ?, updated_at = ? WHERE session_id = ?')
+      .run(status, now, sessionId);
+  }
+
+  setVideo(sessionId: string, status: MediaPhaseStatus, now: string): void {
+    this.db.prepare('UPDATE sync_state SET video_status = ?, updated_at = ? WHERE session_id = ?')
+      .run(status, now, sessionId);
+  }
+
+  markComplete(sessionId: string, now: string): void {
+    this.db.prepare('UPDATE sync_state SET sync_complete = 1, last_sync_at = ?, last_error = NULL, updated_at = ? WHERE session_id = ?')
+      .run(now, now, sessionId);
+  }
+
+  setError(sessionId: string, error: string, now: string): void {
+    this.db.prepare('UPDATE sync_state SET last_error = ?, updated_at = ? WHERE session_id = ?')
+      .run(error, now, sessionId);
+  }
+
+  touch(sessionId: string, now: string): void {
+    this.db.prepare('UPDATE sync_state SET last_sync_at = ?, updated_at = ? WHERE session_id = ?')
+      .run(now, now, sessionId);
+  }
+}
+
+export class MediaTransferRepository {
+  constructor(private readonly db: Database.Database) {}
+
+  /** Idempotent enqueue keyed on (session_id, media_type, chunk_index). */
+  enqueue(record: MediaTransferRecord): boolean {
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO media_transfer_queue (
+        id, session_id, media_type, file_path, s3_key, chunk_index, file_size,
+        s3_upload_id, parts_json, status, attempts, last_error, created_at, updated_at
+      ) VALUES (
+        @id, @sessionId, @mediaType, @filePath, @s3Key, @chunkIndex, @fileSize,
+        @s3UploadId, @partsJson, @status, @attempts, @lastError, @createdAt, @updatedAt
+      )
+    `).run(record);
+    return result.changes > 0;
+  }
+
+  getById(id: string): MediaTransferRecord | null {
+    const row = this.db.prepare('SELECT * FROM media_transfer_queue WHERE id = ?')
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? mapMediaTransfer(row) : null;
+  }
+
+  listBySession(sessionId: string, mediaType: MediaType): MediaTransferRecord[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM media_transfer_queue
+      WHERE session_id = ? AND media_type = ?
+      ORDER BY chunk_index ASC
+    `).all(sessionId, mediaType) as Record<string, unknown>[];
+    return rows.map(mapMediaTransfer);
+  }
+
+  setPresign(id: string, uploadId: string, now: string): void {
+    this.db.prepare(`
+      UPDATE media_transfer_queue
+      SET s3_upload_id = ?, status = 'uploading', updated_at = ?
+      WHERE id = ?
+    `).run(uploadId, now, id);
+  }
+
+  setParts(id: string, partsJson: string, status: MediaTransferStatus, now: string): void {
+    this.db.prepare('UPDATE media_transfer_queue SET parts_json = ?, status = ?, updated_at = ? WHERE id = ?')
+      .run(partsJson, status, now, id);
+  }
+
+  markUploaded(id: string, partsJson: string, now: string): void {
+    this.db.prepare(`
+      UPDATE media_transfer_queue
+      SET parts_json = ?, status = 'uploaded', last_error = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(partsJson, now, id);
+  }
+
+  markError(id: string, attempts: number, lastError: string, now: string): void {
+    this.db.prepare(`
+      UPDATE media_transfer_queue
+      SET status = 'error', attempts = ?, last_error = ?, updated_at = ?
+      WHERE id = ?
+    `).run(attempts, lastError, now, id);
+  }
+
+  countBySessionStatus(sessionId: string, mediaType: MediaType, status: MediaTransferStatus): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS total FROM media_transfer_queue
+      WHERE session_id = ? AND media_type = ? AND status = ?
+    `).get(sessionId, mediaType, status) as { total: number };
+    return row.total;
+  }
+}
+
 export function createRepositories(db: Database.Database) {
   return {
     stationConfig: new StationConfigRepository(db),
@@ -338,6 +508,8 @@ export function createRepositories(db: Database.Database) {
     audioChunks: new AudioChunksRepository(db),
     sessionEvents: new SessionEventsRepository(db),
     insightMarks: new InsightMarksRepository(db),
+    syncState: new SyncStateRepository(db),
+    mediaTransfer: new MediaTransferRepository(db),
   };
 }
 

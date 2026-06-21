@@ -2,14 +2,18 @@ import { fileURLToPath } from 'node:url';
 
 import { config } from '@pi-station/core';
 import {
+  ConnectivityProbe,
   ConsoleHardwareController,
   createRepositories,
   GpioHardwareController,
   HealthLog,
+  HttpStationSyncClient,
   logger,
+  MediaUploader,
   openDatabase,
   StationEventBus,
   StationStateMachine,
+  SyncService,
 } from '@pi-station/core';
 import { buildServer } from './control/server.js';
 import { ReportGenerator } from './report/ReportGenerator.js';
@@ -81,6 +85,34 @@ const voice = new VoiceComponent(capture, relay);
 const enabledIds = parseEnabledComponents(config.hardware.enabledComponents);
 const components = buildComponentRegistry(enabledIds, voice);
 
+const syncClient = new HttpStationSyncClient(config.sync.url, config.relay.timeoutMs);
+const mediaUploader = new MediaUploader({
+  client: syncClient,
+  mediaTransfer: repositories.mediaTransfer,
+  partSize: config.sync.partSize,
+  timeoutMs: config.relay.timeoutMs,
+  token: config.relay.ingestToken,
+  logger,
+});
+const syncService = new SyncService({
+  config,
+  repositories,
+  bus,
+  logger,
+  client: syncClient,
+  uploader: mediaUploader,
+  components: enabledIds,
+  flushSegments: async () => {
+    await voice.flush();
+  },
+});
+const connectivityProbe = new ConnectivityProbe({
+  healthUrl: config.sync.healthUrl,
+  intervalMs: config.sync.probeIntervalMs,
+  timeoutMs: config.relay.timeoutMs,
+  logger,
+});
+
 const reportGenerator = new ReportGenerator(config, repositories);
 const app = new MeetStationApp(
   config,
@@ -92,6 +124,8 @@ const app = new MeetStationApp(
   components,
   reportGenerator,
   logger,
+  syncService,
+  connectivityProbe,
 );
 const healthLog = new HealthLog(bus, repositories.sessionEvents);
 

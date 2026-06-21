@@ -7,10 +7,12 @@ export {
   createRepositories,
   AudioChunksRepository,
   InsightMarksRepository,
+  MediaTransferRepository,
   RelayQueueRepository,
   SessionEventsRepository,
   SessionsRepository,
   StationConfigRepository,
+  SyncStateRepository,
   TranscriptSegmentsRepository,
 } from './db/repositories.js';
 export type { Repositories } from './db/repositories.js';
@@ -21,3 +23,18 @@ export { ConsoleHardwareController } from './hardware/ConsoleHardwareController.
 export { GpioHardwareController } from './hardware/GpioHardwareController.js';
 export type { HardwareController } from './hardware/HardwareController.js';
 export { SyncService } from './sync/SyncService.js';
+export type { SyncServiceDeps } from './sync/SyncService.js';
+export { MediaUploader } from './sync/MediaUploader.js';
+export type { HttpPut, HttpPutResult, MediaUploaderDeps, UploadOutcome } from './sync/MediaUploader.js';
+export { ConnectivityProbe } from './sync/ConnectivityProbe.js';
+export type { ConnectivityProbeDeps, HealthCheck } from './sync/ConnectivityProbe.js';
+export { HttpStationSyncClient } from './sync/StationSyncClient.js';
+export type {
+  ConfirmResult,
+  ManifestResult,
+  PresignOptions,
+  PresignResult,
+  PresignedPart,
+  SessionManifest,
+  StationSyncClient,
+} from './sync/StationSyncClient.js';
