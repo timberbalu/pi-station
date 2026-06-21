@@ -6,6 +6,16 @@
 
 STATUS: DONE
 
+**Prompt:** `devops/ai/prompts/PI_STATION_J6_video_component.md`
+
+**Job (J6 — pi-station):** VideoComponent full implementation + AI HAT+ face detection + pan/tilt speaker tracking. VideoSource interface (Mock/Libcamera), FaceDetector interface (Mock/Hailo), PanTiltController interface (Console/PCA9685), SpeakerTracker (voice-face lock via EventBus). New data dir structure + createSessionDirs. SessionCleaner + POST /sessions/:id/cleanup. Dashboard video card. 84 tests green (58 prior + 26 new), typecheck + build clean.
+
+**Completed:** 2026-06-21
+
+---
+
+## Previous job (J5 — complete)
+
 **Prompt:** `devops/ai/prompts/PI_STATION_J5_local_stt.md`
 
 **Job (J5 — pi-station):** Wire faster-whisper as the post-session batch STT provider. New `FasterWhisperProvider` (batch, injectable spawn, never throws) calls `scripts/transcribe.py` per closed WAV chunk on `stopSession()` when `STT_PROVIDER=faster-whisper`, shifts timestamps to session-relative, persists segments with `provider='faster-whisper'`. New `SilentTranscriptProvider` runs as the live provider in whisper mode so the session captures audio only (no double transcription). `/status.stt.batch_transcription`, report provider note + upgrade path, dashboard "Transcribing locally" indicator. Config: `FASTER_WHISPER_PYTHON`, `FASTER_WHISPER_VENV_DIR`, `FASTER_WHISPER_TIMEOUT_MULTIPLIER`. 58 tests green (48 prior + 10 new), typecheck + build clean. Mock/elevenlabs paths untouched.

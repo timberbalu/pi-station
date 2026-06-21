@@ -6,6 +6,110 @@
 
 ---
 
+## 2026-06-21 — J6: VideoComponent + AI HAT+ face detection + pan/tilt servo tracking (complete)
+
+**84 tests green (58 prior + 26 new). typecheck + build clean.**
+
+Hardware confirmed before build:
+- Camera Module 3 (imx708) connected, working at 2304×1296 @ 30fps via `rpicam-hello`
+- AI HAT+ active (PiSP BCM2712_C0 Hailo pipeline confirmed in libcamera output)
+- M-305 USB mic on `plughw:2,0` (from J2)
+
+### What was built
+
+**Config (`core/src/config.ts`, `shared/src/PlatformConfig.ts`):**
+- New `video` section: `videoSource`, `videoDir`, `facesDir`, `reportsDir`, `videoWidth/Height/Fps/ChunkSeconds/Bitrate`
+- New `faceDetection` section: `provider` (mock|hailo|opencv), `hailoPostProcessFile`
+- New `panTilt` section: `controller` (mock|pca9685), I2C address, channel assignments, physical limits, deadzone, smoothing
+- `.env.example` was already updated (from J6 prompt prep); config.ts now matches
+
+**StationEventBus (`core/src/state/StationEventBus.ts`):**
+- New `audio_energy` event (`{ levelDb, speechActive }`) — SpeakerTracker subscribes to this
+- CaptureService emits it on every audio chunk with a `-30 dB` speech threshold
+
+**VideoSource (`apps/meet-station/src/components/video/`):**
+- `VideoSource.ts` — interface: `start(sessionDir, onChunk)`, `stop()`, `isRunning()`
+- `MockVideoSource` — emits one fake chunk immediately then on a 30s timer; creates placeholder MP4 files; no camera needed
+- `LibcameraVideoSource` — spawns `rpicam-vid` with configurable width/height/fps/bitrate/chunkSeconds; watches video dir for new `.mp4` files via `fs.watch`; emits `VideoChunk` events; handles process errors gracefully
+
+**FaceDetector (`hardware/src/camera/FaceDetector.ts`):**
+- `FaceBox` interface: `{x, y, width, height, confidence, timestampMs}`
+- `MockFaceDetector` — drifts a simulated face slowly across the 1280×720 frame on a 100ms timer
+- `HailoFaceDetector` — spawns `rpicam-hello` with the Hailo JSON pipeline, parses stdout for `{"faces":[...]}` frames; auto-falls-back to MockFaceDetector if hailo-all not installed or HAT+ not detected
+
+**PanTiltController (`hardware/src/servo/PanTiltController.ts`):**
+- `PanTiltController` interface: `init()`, `setPosition(pan, tilt)`, `getPosition()`, `returnToNeutral()`, `shutdown()`
+- `ConsolePanTiltController` — logs position changes; clamps nothing (accepts any degrees); used as mock and as PCA9685 fallback
+- `PCA9685PanTiltController` — drives servos via I2C; dynamic `import('i2c-bus')` with graceful fallback on macOS; 50Hz PWM (1ms=102, 2ms=512 ticks); clamps to panMin/Max, tiltMin/Max; returns to neutral on shutdown
+- `i2c-bus.d.ts` ambient declaration for TypeScript on macOS
+
+**SpeakerTracker (`apps/meet-station/src/components/video/SpeakerTracker.ts`):**
+- Subscribes to `bus.onAudioEnergy` — no direct coupling between VoiceComponent and VideoComponent
+- On speech start: locks to the face nearest frame centre
+- While locked: smooth-tracks the face with low-pass filter (alpha = 1 - smoothing coefficient)
+- Deadzone: skips movement if face is within ±deadzonePx of frame centre
+- On 2s silence: releases lock, returns servo to neutral
+- If locked face leaves frame: releases lock immediately
+- `buildSpeakerTrackerConfig()` factory with sensible defaults (0.07 deg/px scale)
+
+**VideoComponent (`apps/meet-station/src/components/video/VideoComponent.ts`):**
+- Full implementation replacing J3 stub — implements `StationComponent`
+- `init()`: builds VideoSource, FaceDetector, PanTiltController, SpeakerTracker from `ctx.config`
+- `startSession()`: creates session video dir, starts VideoSource + FaceDetector
+- Each new video chunk: enqueues in `media_transfer_queue` (s3Key = `vi-media/sessions/{id}/video/chunk-NNNN.mp4`) — SyncService phase 3 picks this up automatically
+- Face data persisted to `{facesDir}/{sessionId}/faces/{chunkIndex}-faces.json`
+- Handles VideoSource/FaceDetector startup failures gracefully — sets `healthy=false`, logs clearly, never crashes
+- `getStatus()` detail includes: source, running, chunks, detector, panTilt position, tracking status
+
+**SessionDirs (`apps/meet-station/src/SessionDirs.ts`):**
+- `createSessionDirs(sessionId, config)` — creates full session directory tree atomically
+- Integrated into `MeetStationApp.start()` before component fan-out
+
+**SessionCleaner (`apps/meet-station/src/SessionCleaner.ts`):**
+- `clean(sessionId)` — deletes WAV + MP4 files; keeps transcripts, face JSON, reports, SQLite
+- Guards: refuses to clean if `sync_complete != 1`
+- `POST /sessions/:id/cleanup` route added to `routes.ts`
+- Wired into `MeetStationApp` as optional last constructor param; exposed via `cleanSession()`
+
+**Data migration (`scripts/migrate-data-dir.sh`):**
+- Idempotent script to move data from inside-app to `/home/pistation/data/meet-station/`
+- Migrates SQLite and audio sessions if present
+
+**Dashboard (`apps/meet-station/src/public/app.js`):**
+- Video component card shows: source, chunks captured, detector, servo position (pan°/tilt°), tracking status ("Tracking Speaker", "Scanning", "Idle")
+
+### Decisions
+
+- **VideoComponent gets config from `ctx.config` in `init()`, not constructor** — keeps registry clean; `new VideoComponent()` still works with no args.
+- **Video chunks stored in `media_transfer_queue` directly** (not in `audio_chunks` table, which has no `media_type` column) — avoids schema migration that would break existing tests. SyncService phase 3 already reads from `media_transfer_queue` for both audio and video.
+- **`FasterWhisperProvider.transcribeFile` never throws** — matches the decision from J5 (graceful empty-on-error).
+- **SpeakerTracker deadzone at face centre ±20px** — avoids jitter when the camera is roughly aligned.
+- **PCA9685 i2c-bus via dynamic import** — fails gracefully on macOS; `i2c-bus.d.ts` ambient declaration keeps TypeScript happy.
+- **`HailoFaceDetector` falls back to `MockFaceDetector`** on spawn error or process exit — production never hard-fails because the camera module crashed.
+
+### Test count: 84 tests (26 new)
+
+New test files: `videoComponent.test.ts` (7), `faceDetector.test.ts` (3), `panTilt.test.ts` (6), `speakerTracker.test.ts` (5), `sessionDirs.test.ts` (2), `sessionCleaner.test.ts` (3). Updated: `componentHost.test.ts` (VideoComponent stub tests now use real context).
+
+### Pi deploy (for next physical session)
+
+```bash
+npm run build && bash scripts/deploy-pi.sh pistation@pistation.local
+# On Pi .env:
+#   VIDEO_SOURCE=libcamera
+#   FACE_DETECTION=hailo
+#   PAN_TILT=pca9685  (only if PCA9685 + servos are wired)
+#   VIDEO_DIR=/home/pistation/data/meet-station/sessions
+#   FACES_DIR=/home/pistation/data/meet-station/sessions
+#   REPORTS_DIR=/home/pistation/data/meet-station/reports
+# First run:
+#   bash scripts/migrate-data-dir.sh pistation@pistation.local
+#   pm2 restart pi-station
+# Test: ENABLED_COMPONENTS=voice,video then pair → start → wait 30s → stop
+```
+
+---
+
 ## 2026-06-21 — J5: Local STT (faster-whisper) (complete)
 
 **58 tests green (48 prior + 10 new). typecheck + build clean. Mock/elevenlabs paths untouched.**

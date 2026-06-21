@@ -12,6 +12,9 @@ import type {
 } from '@pi-station/core';
 import { StationEventBus, StationStateMachine } from '@pi-station/core';
 import { ReportGenerator } from './report/ReportGenerator.js';
+import { createSessionDirs } from './SessionDirs.js';
+import { SessionCleaner } from './SessionCleaner.js';
+import type { CleanupResult } from './SessionCleaner.js';
 import type { StationComponent } from './components/StationComponent.js';
 import type { VoiceComponent } from './components/voice/VoiceComponent.js';
 import { nowIso } from './types.js';
@@ -38,6 +41,7 @@ export class MeetStationApp {
     private readonly log: Logger,
     private readonly syncService?: SyncService,
     private readonly connectivityProbe?: ConnectivityProbe,
+    private readonly sessionCleaner?: SessionCleaner,
   ) {
     this.mockIngestAvailable = config.relay.mockIngestAvailable;
   }
@@ -154,6 +158,13 @@ export class MeetStationApp {
     this.currentSession.startedAt = startedAt;
     this.currentSession.stoppedAt = null;
     this.repositories.sessions.markStarted(this.currentSession.sessionId, startedAt, startedAt);
+
+    // Create session directory tree before fanning out to components
+    try {
+      createSessionDirs(this.currentSession.sessionId, this.config);
+    } catch (err) {
+      this.log.warn({ err }, 'createSessionDirs failed — components will create their own dirs');
+    }
 
     for (const component of this.components) {
       await component.startSession(this.currentSession);
@@ -402,6 +413,13 @@ export class MeetStationApp {
 
   getMockIngestSegments(): IngestPayload[] {
     return [...this.mockIngestSegments];
+  }
+
+  async cleanSession(sessionId: string): Promise<CleanupResult> {
+    if (!this.sessionCleaner) {
+      throw new Error('SessionCleaner not configured');
+    }
+    return this.sessionCleaner.clean(sessionId);
   }
 
   private findVoiceComponent(): VoiceComponent | null {

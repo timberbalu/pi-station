@@ -129,6 +129,6 @@ Foundry365 (Node.js / TypeScript / ECS)
 
 ## 6. Current state
 
-> As of 2026-06-21: J1, J2b, and J2 are complete. Pi is provisioned and running MeetStation at `pistation.local:3456`. M-305 mic confirmed on `plughw:2,0`. Real WAV capture working. faster-whisper `base.en` installed and transcribing real speech. pm2 auto-starts on reboot. **J3 (component platform)** is the next job. See `diary.md` for the full session log.
+> As of 2026-06-21: J1–J6 complete. Pi provisioned and running at `pistation.local:3456`. M-305 mic on `plughw:2,0`. Camera Module 3 (imx708) and AI HAT+ confirmed. VideoComponent + AI HAT+ face detection + pan/tilt tracking built and tested. 84 tests green. **J7 (cloud upgrade path — admin re-submits WAV to ElevenLabs)** is next. See `diary.md` for the full session log.
 
 *(Update this line whenever milestone state changes.)*

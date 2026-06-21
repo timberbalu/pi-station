@@ -98,6 +98,9 @@ export class CaptureService {
     await this.transcriptProvider.connect();
     await this.audioSource.start((chunk) => {
       this.lastLevelDb = chunk.levelDb ?? null;
+      if (chunk.levelDb !== undefined) {
+        this.bus.emitAudioEnergy({ levelDb: chunk.levelDb, speechActive: chunk.levelDb > -30 });
+      }
       this.wavWriter.append(chunk);
       void this.transcriptProvider.sendAudio(chunk);
     });
@@ -125,6 +128,9 @@ export class CaptureService {
     await this.transcriptProvider.connect();
     await this.audioSource.start((chunk) => {
       this.lastLevelDb = chunk.levelDb ?? null;
+      if (chunk.levelDb !== undefined) {
+        this.bus.emitAudioEnergy({ levelDb: chunk.levelDb, speechActive: chunk.levelDb > -30 });
+      }
       this.wavWriter.append(chunk);
       void this.transcriptProvider.sendAudio(chunk);
     });

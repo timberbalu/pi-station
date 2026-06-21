@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-06-21 — J6 VideoComponent + AI HAT+ face detection + pan/tilt servo tracking
+
+- **Start:** 2026-06-21 BST
+- **End:** 2026-06-21 BST
+- **Tests:** 84 green (58 prior + 26 new) across 21 test files
+- **Typecheck:** clean
+- **Build:** clean
+
+### What shipped
+- `VideoSource` interface + `MockVideoSource` (timer-based) + `LibcameraVideoSource` (rpicam-vid, fs.watch)
+- `FaceDetector` interface + `MockFaceDetector` (drifting face) + `HailoFaceDetector` (rpicam-hello JSON parse, fallback)
+- `PanTiltController` interface + `ConsolePanTiltController` + `PCA9685PanTiltController` (i2c-bus, dynamic import, fallback)
+- `SpeakerTracker` — voice-face lock via EventBus `audio_energy` event, smooth tracking, deadzone, 2s silence release
+- `VideoComponent` full implementation — replaces J3 stub; enqueues video chunks to `media_transfer_queue` for SyncService phase 3
+- `SessionDirs` helper + `MeetStationApp.start()` integration
+- `SessionCleaner` + `POST /sessions/:id/cleanup` route
+- `StationEventBus` new `audio_energy` event; `CaptureService` emits on each audio chunk
+- Config: `video`, `faceDetection`, `panTilt` sections in `core/src/config.ts` + `shared/src/PlatformConfig.ts`
+- Dashboard video card: source, chunks, detector, servo position, tracking status
+- `scripts/migrate-data-dir.sh` — idempotent Pi data dir migration
+- `devops/hardware/device-config.md` updated with camera, AI HAT+, servo wiring spec
+- New test files: `videoComponent`, `faceDetector`, `panTilt`, `speakerTracker`, `sessionDirs`, `sessionCleaner`
+
+### Hardware confirmed before build
+- Camera Module 3 (imx708) at 2304×1296 @ 30fps
+- AI HAT+ (PiSP BCM2712_C0) active in libcamera pipeline
+- M-305 mic on plughw:2,0
+
+### Pi deploy (next physical session)
+```bash
+npm run build && bash scripts/deploy-pi.sh pistation@pistation.local
+# bash scripts/migrate-data-dir.sh pistation@pistation.local
+# Set VIDEO_SOURCE=libcamera, FACE_DETECTION=hailo, ENABLED_COMPONENTS=voice,video
+# pm2 restart pi-station
+```
+
+---
+
 ## 2026-06-21 — J5 Local STT (faster-whisper)
 
 - **Start:** 2026-06-21 BST

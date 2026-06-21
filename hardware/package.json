@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@pi-station/core": "*",
-    "@pi-station/shared": "*"
+    "@pi-station/shared": "*",
+    "i2c-bus": "^5.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

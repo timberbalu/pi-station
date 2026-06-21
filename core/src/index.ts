@@ -18,6 +18,7 @@ export {
 export type { Repositories } from './db/repositories.js';
 export { HealthLog } from './state/HealthLog.js';
 export { StationEventBus } from './state/StationEventBus.js';
+export type { AudioEnergyEvent } from './state/StationEventBus.js';
 export { StationStateMachine } from './state/StationStateMachine.js';
 export { ConsoleHardwareController } from './hardware/ConsoleHardwareController.js';
 export { GpioHardwareController } from './hardware/GpioHardwareController.js';

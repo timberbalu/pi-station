@@ -32,6 +32,7 @@ import { IngestClient } from './relay/IngestClient.js';
 import { RelayService } from './relay/RelayService.js';
 import { VoiceComponent } from './components/voice/VoiceComponent.js';
 import { buildComponentRegistry, parseEnabledComponents } from './components/registry.js';
+import { SessionCleaner } from './SessionCleaner.js';
 import type { AudioSource } from './capture/AudioSource.js';
 import type { TranscriptProvider } from './capture/TranscriptProvider.js';
 
@@ -139,6 +140,7 @@ const connectivityProbe = new ConnectivityProbe({
 });
 
 const reportGenerator = new ReportGenerator(config, repositories);
+const sessionCleaner = new SessionCleaner(config, repositories, logger);
 const app = new MeetStationApp(
   config,
   db,
@@ -151,6 +153,7 @@ const app = new MeetStationApp(
   logger,
   syncService,
   connectivityProbe,
+  sessionCleaner,
 );
 const healthLog = new HealthLog(bus, repositories.sessionEvents);
 

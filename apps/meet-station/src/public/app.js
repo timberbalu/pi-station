@@ -118,16 +118,44 @@ function renderComponents(components) {
   componentsGrid.innerHTML = components.map((c) => {
     const stateLabel = c.buffering ? 'buffering' : (c.healthy ? 'healthy' : 'degraded');
     const stateClass = c.buffering ? 'component-buffering' : (c.healthy ? 'component-healthy' : 'component-degraded');
-    const voiceDetail = c.id === 'voice' && c.detail
-      ? `<span class="comp-detail">mic: ${c.detail.mic?.source ?? '—'} &nbsp;|&nbsp; stt: ${c.detail.stt?.provider ?? '—'} &nbsp;|&nbsp; queued: ${c.queued_items}</span>`
-      : `<span class="comp-detail">queued: ${c.queued_items}</span>`;
+
+    let detailHtml = '';
+
+    if (c.id === 'voice' && c.detail) {
+      detailHtml = `<span class="comp-detail">mic: ${c.detail.mic?.source ?? '—'} &nbsp;|&nbsp; stt: ${c.detail.stt?.provider ?? '—'} &nbsp;|&nbsp; queued: ${c.queued_items}</span>`;
+    } else if (c.id === 'video' && c.detail) {
+      const d = c.detail;
+      const panTilt = d.panTilt
+        ? `${d.panTilt.controller} (pan ${Number(d.panTilt.pan).toFixed(0)}° / tilt ${Number(d.panTilt.tilt).toFixed(0)}°)`
+        : '—';
+      const trackingStatus = d.tracking
+        ? (d.tracking.speechActive
+            ? (d.tracking.lockedFace ? '🎯 Tracking speaker' : '🔍 Scanning')
+            : 'Idle')
+        : '—';
+      detailHtml = `
+        <span class="comp-detail">
+          source: ${d.source ?? '—'} &nbsp;|&nbsp;
+          chunks: ${d.chunks ?? 0} &nbsp;|&nbsp;
+          detector: ${d.detector ?? '—'}
+        </span>
+        <span class="comp-detail">
+          servo: ${panTilt} &nbsp;|&nbsp;
+          tracking: ${trackingStatus}
+        </span>
+        ${d.error ? `<span class="comp-detail comp-error">${d.error}</span>` : ''}
+      `;
+    } else {
+      detailHtml = `<span class="comp-detail">queued: ${c.queued_items}</span>`;
+    }
+
     return `
       <article class="component-card ${stateClass}">
         <div class="comp-header">
           <strong class="comp-label">${c.label}</strong>
           <span class="comp-state">${stateLabel}</span>
         </div>
-        ${voiceDetail}
+        ${detailHtml}
       </article>
     `;
   }).join('');

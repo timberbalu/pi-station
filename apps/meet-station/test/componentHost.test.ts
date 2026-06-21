@@ -1,7 +1,32 @@
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createRepositories, loadConfig, logger, openDatabase, StationEventBus } from '@pi-station/core';
 import type { ComponentContext, ComponentReportSection, ComponentStatus, StationComponent } from '../src/components/StationComponent.js';
 import type { SessionSummary } from '../src/types.js';
+
+function makeVideoCtx(): ComponentContext {
+  const root = mkdtempSync(join(tmpdir(), 'pi-comp-host-'));
+  const config = loadConfig({
+    ...process.env,
+    NODE_ENV: 'test',
+    DATA_DIR: root,
+    SQLITE_PATH: join(root, 'station.sqlite'),
+    VIDEO_DIR: join(root, 'sessions'),
+    FACES_DIR: join(root, 'sessions'),
+    REPORTS_DIR: join(root, 'reports'),
+    VIDEO_SOURCE: 'mock',
+    FACE_DETECTION: 'mock',
+    PAN_TILT: 'mock',
+  });
+  const db = openDatabase(config);
+  const repositories = createRepositories(db);
+  const bus = new StationEventBus();
+  return { config, repositories, bus, logger, dataDir: root };
+}
 
 /**
  * A fake component that records every method call — used to assert the host
@@ -89,9 +114,18 @@ describe('VideoComponent stub', () => {
   it('all lifecycle methods resolve without throwing', async () => {
     const { VideoComponent } = await import('../src/components/video/VideoComponent.js');
     const video = new VideoComponent();
-    const ctx = {} as ComponentContext;
+    const ctx = makeVideoCtx();
+    const fakeSession: SessionSummary = {
+      sessionId: 'comp-host-test',
+      sessionCode: '000',
+      title: 'Test',
+      stationToken: 'tok',
+      ingestUrl: 'http://localhost/ingest',
+      startedAt: new Date().toISOString(),
+      stoppedAt: null,
+    };
     await expect(video.init(ctx)).resolves.toBeUndefined();
-    await expect(video.startSession({} as SessionSummary)).resolves.toBeUndefined();
+    await expect(video.startSession(fakeSession)).resolves.toBeUndefined();
     await expect(video.pause()).resolves.toBeUndefined();
     await expect(video.resume()).resolves.toBeUndefined();
     await expect(video.stopSession()).resolves.toBeUndefined();

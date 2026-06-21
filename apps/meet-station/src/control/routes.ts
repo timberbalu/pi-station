@@ -83,4 +83,15 @@ export async function registerRoutes(server: FastifyInstance, context: ControlCo
     context.app.markInsight(body.note);
     return reply.send({ ok: true });
   });
+
+  server.post('/sessions/:sessionId/cleanup', async (request, reply) => {
+    const { sessionId } = z.object({ sessionId: z.string().min(1) }).parse(request.params);
+    try {
+      const result = await context.app.cleanSession(sessionId);
+      return reply.send({ ok: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cleanup failed';
+      return reply.status(400).send({ ok: false, error: message });
+    }
+  });
 }

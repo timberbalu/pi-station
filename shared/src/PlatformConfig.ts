@@ -69,4 +69,34 @@ export interface PlatformConfig {
     readonly whitePin: number;
     readonly buttonPin: number;
   };
+  readonly video: {
+    readonly videoSource: 'mock' | 'libcamera';
+    readonly videoDir: string;
+    readonly facesDir: string;
+    readonly reportsDir: string;
+    readonly videoWidth: number;
+    readonly videoHeight: number;
+    readonly videoFps: number;
+    readonly videoChunkSeconds: number;
+    readonly videoBitrate: number;
+  };
+  readonly faceDetection: {
+    readonly provider: 'mock' | 'hailo' | 'opencv';
+    readonly hailoPostProcessFile: string;
+  };
+  readonly panTilt: {
+    readonly controller: 'mock' | 'pca9685';
+    readonly i2cBus: number;
+    readonly i2cAddress: number;
+    readonly panChannel: number;
+    readonly tiltChannel: number;
+    readonly panMin: number;
+    readonly panMax: number;
+    readonly tiltMin: number;
+    readonly tiltMax: number;
+    readonly neutralPan: number;
+    readonly neutralTilt: number;
+    readonly deadzonePx: number;
+    readonly smoothing: number;
+  };
 }

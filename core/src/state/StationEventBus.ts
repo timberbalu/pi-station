@@ -16,15 +16,23 @@ interface SessionEventMessage {
   payload?: Record<string, unknown>;
 }
 
+export interface AudioEnergyEvent {
+  levelDb: number;
+  /** true when the level exceeds a speech-activity threshold */
+  speechActive: boolean;
+}
+
 type SessionEventListener = (event: SessionEventMessage) => void;
 type StateChangeListener = (event: StateChangedEvent) => void;
 type PartialListener = (partial: TranscriptPartial) => void;
 type CommitListener = (commit: TranscriptCommit) => void;
+type AudioEnergyListener = (event: AudioEnergyEvent) => void;
 
 const STATE_CHANGED = 'state_changed';
 const SESSION_EVENT = 'session_event';
 const PARTIAL = 'transcript_partial';
 const COMMIT = 'transcript_commit';
+const AUDIO_ENERGY = 'audio_energy';
 
 export class StationEventBus {
   private readonly emitter = new EventEmitter();
@@ -59,5 +67,13 @@ export class StationEventBus {
 
   onTranscriptCommit(listener: CommitListener): void {
     this.emitter.on(COMMIT, listener);
+  }
+
+  emitAudioEnergy(event: AudioEnergyEvent): void {
+    this.emitter.emit(AUDIO_ENERGY, event);
+  }
+
+  onAudioEnergy(listener: AudioEnergyListener): void {
+    this.emitter.on(AUDIO_ENERGY, listener);
   }
 }
