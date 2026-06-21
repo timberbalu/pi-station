@@ -1,0 +1,56 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import type { PlatformConfig, Repositories } from '@pi-station/core';
+import type { SessionReport, SessionSummary } from '../types.js';
+
+export class ReportGenerator {
+  constructor(
+    private readonly config: PlatformConfig,
+    private readonly repositories: Repositories,
+  ) {}
+
+  generate(session: SessionSummary): SessionReport {
+    const transcript = this.repositories.transcriptSegments.listBySession(session.sessionId);
+    const insightMarks = this.repositories.insightMarks.listBySession(session.sessionId);
+    const queuedSegmentsRemaining = this.repositories.relayQueue.countByStatus('pending')
+      + this.repositories.relayQueue.countByStatus('sending');
+
+    const report: SessionReport = {
+      session_id: session.sessionId,
+      title: session.title,
+      started_at: session.startedAt,
+      stopped_at: session.stoppedAt,
+      duration_ms: session.startedAt && session.stoppedAt
+        ? new Date(session.stoppedAt).getTime() - new Date(session.startedAt).getTime()
+        : 0,
+      station_id: this.config.app.stationId,
+      summary: {
+        headline: 'Panel transcript captured by MeetPaper Station',
+        note: 'AI summary hook not enabled in MVP. Transcript and insight marks available.',
+      },
+      transcript,
+      insight_marks: insightMarks,
+      health: {
+        audio_gaps: 0,
+        transcript_segments: transcript.length,
+        queued_segments_remaining: queuedSegmentsRemaining,
+        network_interruptions: this.repositories.sessionEvents.countByType('network_down_simulated'),
+        stt_interruptions: this.repositories.sessionEvents.countByType('stt_disconnected'),
+      },
+    };
+
+    mkdirSync(join(this.config.app.dataDir, 'reports'), { recursive: true });
+    writeFileSync(
+      join(this.config.app.dataDir, 'reports', `${session.sessionId}.json`),
+      `${JSON.stringify(report, null, 2)}\n`,
+      'utf8',
+    );
+
+    return report;
+  }
+
+  async summariseWithLLM(): Promise<void> {
+    return Promise.resolve();
+  }
+}

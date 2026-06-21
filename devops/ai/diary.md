@@ -6,7 +6,295 @@
 
 ---
 
-## 2026-06-13 — Hackathon day (Agents in the Wild, Blue Garage Lewisham)
+## 2026-06-13 (late evening) — J2b platform restructure completed
+
+### What changed
+
+The repo is now structurally a platform:
+
+- `shared/` added with `PiApp` and `PlatformConfig` contract types.
+- `core/` added and now owns config, logger, DB, state, and the existing console/GPIO-safe hardware control.
+- `hardware/` added with stable stub paths for `PanTiltController` and `CameraController`.
+- `apps/meet-station/` added and now contains the former app logic from repo-root `src/`, including `MeetStationApp`, capture, relay, control, report, public assets, tests, and fixtures.
+- Root `package.json` now defines npm workspaces.
+- Root `tsconfig.json` now uses project references across the workspace graph.
+- Old repo-root `src/` removed.
+
+### What did not change
+
+- The MeetStation behavior stayed intact.
+- The 7 existing tests still pass.
+- The mock transcript / offline-buffering / report flow was preserved.
+- No application logic was intentionally changed; this was a move/rename/package-boundary refactor.
+
+### Runtime note
+
+`npm run dev` now uses `node --import tsx/esm apps/meet-station/src/index.ts` rather than the `tsx` CLI. Reason: the sandbox here rejects the IPC pipe used by the `tsx` CLI. With the loader path, the app bootstraps successfully through hardware init, but this Codex environment still blocks binding to `0.0.0.0:3456` with `listen EPERM`. That is an environment restriction, not an app failure. Outside the sandbox, the dev command is the correct entrypoint to verify the live dashboard.
+
+### Verification
+
+- `npm install` rerun after workspace manifests changed
+- `npm run typecheck` passed
+- `npm test` passed (6 files / 7 tests)
+- `npm run build` passed
+
+### Follow-on
+
+The next real job is still J2 Pi provisioning. J2b was the internal architecture cleanup that gets the platform shape correct before real hardware deployment.
+
+## 2026-06-13 (evening) — Pi-Station is a platform; MeetStation is the first app
+
+**The fundamental reframing:** Pi-Station is not an app. It is an **edge platform** — the Raspberry Pi equivalent of F365. From now on, Pi-Station hosts apps. The first app is **MeetStation** (the audio/video capture and intelligence layer for MeetPaper Voice Intelligence events).
+
+This mirrors F365 exactly:
+- F365 platform → Pi-Station platform
+- MeetPaper app in F365 → MeetStation app in Pi-Station
+- F365 npm workspaces (shared/server/client) → Pi-Station workspaces (shared/core/hardware/apps/meet-station)
+
+**Name chosen: MeetStation.** Biju's choice. It says exactly what it is: a Meet-family product that lives on the Station. Consistent with MeetPaper, MeetLive, etc.
+
+**The platform contract:** `PiApp` interface in `shared/src/PiApp.ts`. Every future Pi-Station app implements this interface. The platform owns: device identity, SQLite, sync service, hardware abstraction, offline-resilience guarantee. Apps own: capture logic, local buffers, relay, dashboard contribution, report section.
+
+**J2b written:** a platform restructure job that moves everything from the flat `src/` layout into the workspace structure above. Pure move/rename refactor — zero logic changes, all 7 tests must still pass, mock demo must run identically. Builds before J2 (Pi provisioning) so the Pi gets the correct architecture from day one.
+
+**New workspace structure:**
+```
+pi-station/
+  shared/          (@pi-station/shared) — PiApp interface
+  core/            (@pi-station/core) — DB, state, config, logger
+  hardware/        (@pi-station/hardware) — servo/camera stubs (J6)
+  apps/
+    meet-station/  (@pi-station/meet-station) — MeetStation (J1 code, moved)
+```
+
+---
+
+**Quickstart doc (Quickstart — Edge AI on a Raspberry Pi) key findings:**
+
+- **STT recommendation is Vosk, not Whisper.** Vosk is ~50MB, runs offline on CPU, gives live streaming transcription. The doc explicitly says “if you need higher accuracy and don’t mind it being slower, swap in faster-whisper with the base.en model.” Vosk is the correct live STT for a 4GB Pi — supersedes earlier plan to use whisper.cpp for live transcription. faster-whisper (base.en) is the quality upgrade for post-session batch.
+- **Ollama confirmed for the Pi** (Gemma 2 2B recommended, ~1.8GB RAM, 3–5 words/sec). Stands as a hackathon demo option but not a product dependency (CoCo handles this in production).
+- **NeuTTS confirmed as TTS** — runs on CPU, not the HAT+. The MAX98357 amp + wired speaker in the kit provides audio output (Pi 5 has no headphone jack). Reconsidered for spoken station announcements behind a feature flag.
+- **AI HAT+ rule of thumb confirmed:** HAT+ for live camera vision, CPU for everything else (STT, TTS, LLM).
+- **Kit also contains:** PCA9685 servo driver, MG996R + SG90 servos, OLED display, VL53L0X distance sensor, MAX98357 amp, wired speaker, 3D printer for enclosures.
+
+**Pan/tilt speaker-tracking camera — confirmed viable with the kit:**
+Biju proposed a motorised camera that swivels to track whoever is speaking, locking voice + face together. Fully feasible with: AI HAT+ face detection (30fps, no CPU cost) + PCA9685 (I2C) + MG996R pan servo + SG90 tilt servo. Standard PWM servos cover 0–180 degrees — covers the frontal arc of a seated panel. 360-degree sweep needs continuous-rotation servos (not in kit). Voice-face locking heuristic: VAD energy threshold on audio stream → lock to nearest face on speech start → smooth servo tracking → release on 2s silence. This becomes the VideoComponent’s physical intelligence layer.
+
+**Revised STT provider stack:**
+1. `MockTranscriptProvider` — dev/demo
+2. `VoskProvider` — live, offline, default on Pi
+3. `FasterWhisperProvider` — quality batch, post-session
+4. `ElevenLabsRealtimeProvider` — cloud, highest quality, admin-triggered
+
+---
+
+### Session association — two scenarios
+
+**Scenario A (pre-configured):** Organiser creates VI session in MeetPaper before the event and specifies "recorded by Pi-Station". Station pairs before the event; VI database already has the session record. Phase 1 manifest is pre-established. Segments and media sync to a known session on reconnect.
+
+**Scenario B (post-hoc):** Organiser doesn't set this up. Pi captures everything locally. On sync, the manifest arrives at VI as an "unassociated recording" — no event mapping yet. VI holds it in a pending state (`session_state = 'pending_association'`). Organiser gets a notification in MeetPaper admin: "Unassociated Station recording available — 2h 4min from 13 June. Associate with an event?" Once associated, CoCo pipeline fires.
+
+Both scenarios are valid. The UI distinction is in MeetPaper (apm), not in pi-station. Pi-station sends the same manifest either way.
+
+### Compacting sync model
+
+Biju introduced the "compacting" analogy — analogous to how AI context windows compact older conversation into a summary. The Station should not attempt continuous sync during the event. Instead:
+
+- **During event:** capture runs continuously (audio + video → disk, Whisper runs periodically). No sync. SQLite accumulates everything locally.
+- **On stop (or periodic checkpoint):** Station compacts the session — consolidates WAV chunk index, flushes pending Whisper segments, builds the full session manifest. *Then* attempts sync.
+- **Sync is event-level, not segment-level real-time.** The session finishes first; the sync happens after. This is a meaningful architectural decision: it means the relay queue model (segment-by-segment live posting) is the *live ElevenLabs path*, and the compacting sync model (post-event batch) is the *local Whisper + offline path*.
+
+These two paths coexist in the same SyncService:
+- **Live path (Scenario A, ElevenLabs online):** segments post in real-time via RelayService. Audio/video media sync post-session via SyncService Phase 3.
+- **Offline/Whisper path:** everything syncs post-event in one compacting cycle. RelayService has nothing to flush (no live ElevenLabs); SyncService handles everything: manifest → Whisper transcript → media files → complete.
+
+### AI HAT+ — changes the VideoComponent architecture significantly
+
+Biju receives the AI HAT+ (13 or 26 TOPS) by Thursday. Key facts:
+- Hailo NPU connected via Pi 5 PCIe Gen 3 interface
+- Auto-detected by Pi OS — `rpicam-apps` natively offloads vision post-processing to the NPU
+- 26 TOPS variant: runs multiple neural networks simultaneously — object detection + pose estimation + face recognition all at once on a single video feed, no dropped frames
+- Does NOT accelerate Whisper (not a vision model — runs on CPU regardless)
+- Models must be compiled to Hailo format on x86 laptop first, then copied to Pi
+
+For VideoComponent (J6), the AI HAT+ enables: real-time speaker face detection, face-to-speaker-label mapping, slide capture detection — all running on the NPU with zero CPU overhead during recording. This upgrades VideoComponent from "raw video chunks" to "annotated video chunks with face timestamps and slide markers."
+
+For the two-Pi architecture: Pi 1 (AI HAT+) = intelligent capture node (camera + audio + NPU face detection during session); Pi 2 = processing node (Whisper on CPU post-session + sync service + control API). This is the production architecture; for the hackathon, one Pi covers everything.
+
+---
+
+Biju confirmed: voice and video chunks should be stored in S3, not in MySQL. This is consistent with the existing ecosystem architecture — both ApresMeet ("Media storage: AWS S3 (audio, images, transcripts)") and Foundry365 ("S3 Media files, audio recordings, transcripts") already use S3. This isn't a new decision; it's an extension of the established pattern.
+
+**Key architectural implication — presigned URLs, not proxy uploads:**
+Large binary files (WAV chunks, video MP4s) must never be streamed through the PHP/Elastic Beanstalk application server. EB is not built for that and it would hammer web workers unnecessarily. The correct pattern is:
+1. Pi asks PHP server for a presigned S3 URL (tiny request)
+2. Pi uploads binary directly to S3 (bypasses EB entirely)
+3. Pi confirms completion to PHP server (tiny request)
+4. PHP calls `completeMultipartUpload` on S3
+
+This is also how the Pi stays credential-free — it never holds AWS keys. The PHP server generates presigned URLs using its own credentials (which it already has).
+
+**S3 key structure decided:** `vi-media/sessions/{session_id}/audio/chunk-NNNN.wav` (and `/video/` equivalent). Zero-padded so lexicographic = chronological. This is what CoCo reads, what the ElevenLabs upgrade path sends to Scribe, and what MeetPaper serves via CloudFront.
+
+**Resumability via S3 multipart upload IDs:** No need to track `bytes_sent` in our own table — S3's `upload_id` is the native resume token. Pi stores `upload_id` + confirmed `etag` per part in `media_transfer_queue`; on reconnect, resumes from the last confirmed part. S3 keeps multipart uploads alive for 7 days.
+
+**New apm-side table:** `VI_MEDIA_ASSETS` records every uploaded chunk with its S3 key. CoCo reads this to find session media. J7 (cloud upgrade path) reads it to trigger ElevenLabs re-processing on the correct audio key.
+
+J3b prompt fully rewritten to reflect the S3 architecture.
+
+---
+
+## 2026-06-13 (evening) — Sync Service identified as critical missing piece (J3b)
+
+Biju raised the right question: how does the Pi transition from offline to online without data loss when it has three streams (audio WAV, transcript segments, future video MP4) all needing to reach the VI database?
+
+The existing `RelayService` handles transcript segments correctly but has no concept of:
+- A session manifest (VI needs to know the session exists before accepting segments)
+- Media file transfer (large binaries, not segment-shaped)
+- A sync-complete signal (VI has no way to know the Pi is done)
+- Resumability across all streams (if the connection drops again mid-sync)
+
+**Decision: add J3b (Sync Service) between J3 and J4.** It is a host-level service (not a component) that coordinates a four-phase sync protocol:
+1. Manifest first — POST session metadata; gate everything else on this
+2. Transcript segments — existing RelayService, unchanged, just gated on phase 1
+3. Media files — chunked upload with Content-Range, resumable by bytes_sent offset
+4. Sync-complete signal — VI marks session fully received; Pi marks sync_complete=1
+
+New tables: `sync_state` (per-session, tracks each phase's status) and `media_transfer_queue` (per-file, tracks bytes_sent for resumability). A `ConnectivityProbe` drives the `OFFLINE_BUFFERING → SYNCING` transition as a real network health signal rather than an inferred state.
+
+The dashboard `SYNCING` banner becomes genuinely informative — shows each phase ticking to ✓ — rather than just a queue depth counter. This is what makes the offline-to-online story trustworthy to an organiser watching it happen.
+
+J3b also documents the apm-side endpoint contracts (manifest, media upload, sync-complete) so J4 builds the right receiver without ambiguity.
+
+---
+
+**The diagram Biju drew changes the framing of the whole product.** Pi-Station is not a resilience device that buffers when the internet drops. It is a **local intelligence node** — a first-class compute device that does real work on the local side of unreliable connectivity, permanently.
+
+The three roles as Biju defined them:
+1. **Storage** — WAV, SQLite, transcripts. Always.
+2. **Private AI processing** — Whisper STT locally by default. Audio never leaves the room until the admin decides.
+3. **Private interaction** — Bluetooth polls/feedback from attendees.
+
+**The key architectural insight — the admin choice point:**
+When the connection returns, the Station syncs to VI. The admin then *chooses*: keep the local Whisper transcript, or re-process the WAV through ElevenLabs (spending tokens) for higher quality. This means:
+- Whisper is the **primary** local pipeline, not a fallback
+- ElevenLabs is an **optional upgrade path**, not a dependency
+- The privacy guarantee becomes tangible: audio stays private until the admin explicitly decides otherwise
+
+**How this reshapes the job queue:**
+- J2 (Pi provisioning): unchanged
+- J3 (component platform): more important than ever — Whisper, Bluetooth, AI processing are all components
+- J5: local Whisper STT as the primary pipeline, post-session batch first, live streaming later
+- J6: cloud upgrade path — admin UI on apm side, re-submit WAV to ElevenLabs on demand
+- J7: Bluetooth interaction component
+- J8: local AI summarisation (Ollama)
+
+**NeuTTS decision:** not adding it. It is TTS not STT, and it doesn't add value to the current roadmap. The `neutts.com` URL given by hackathon organisers is flagged as not affiliated with Neuphonic (the real project is at `neuphonic.com` / `github.com/neuphonic/neutts`). Whisper addresses the actual gap (local STT) and is deeply on-thesis.
+
+**Tagline still holds, stronger now:** *"The room keeps recording. Even when the internet doesn't."* — and now also: *"And it keeps transcribing. Privately."*
+
+---
+
+**J1 verified.** Independent check of the Codex output: full module structure present, `package.json` deps correct (dotenv/zod/pino/pino-pretty/vitest in, node-fetch correctly dropped for native fetch), `StationStateMachine` correct (all transitions, illegal ones throw, events emitted), dashboard + banner logic correct, loop closed (diary/project updated, 7 tests green, build clean). One cosmetic nit: dashboard transcript re-renders fully each poll instead of diffing — not a blocker. **The laptop mock demo is solid and is the guaranteed hackathon fallback.**
+
+**Direction set by Biju:** Station should be a **generic platform**, not a voice product. Voice is component #1; video is planned as component #2; more to follow. This reframes the roadmap into two distinct next steps:
+
+- **J2 (now active) — Pi provisioning / connectivity.** Pure infrastructure: get the actual Pi 5 reachable over LAN, provisioned (alsa-utils, Node 22, pm2), auto-starting, and confirmed capturing real M-305 audio. Split into a human-physical half (power/network/SSH/mic) and an LLM half (idempotent `provision-pi.sh` + deploy + verify over SSH). Real ElevenLabs folded in as the proof the voice component works on hardware, with mock STT as the fallback if the venue blocks the API.
+- **J3 (queued, prompt written) — Generic multi-component platform.** Refactor `StationApp` (currently voice-coupled — `pair/start/stop`, session model, status shape, report all assume voice) into a **host** that runs pluggable `StationComponent`s. Voice moves into `src/components/voice/VoiceComponent.ts` wrapping the existing capture/relay (behaviourally identical, just rehomed). A dormant `VideoComponent` stub proves the seam. Config-driven via `ENABLED_COMPONENTS=voice`. Test-protected; the voice demo must never break. Recorded as a durable principle in `memory.md` §1a.
+
+**Why J2 before J3:** provisioning is independent of the refactor and unblocks the “it runs on real hardware” story immediately; J3 is a careful internal refactor best done when not racing a venue clock. Either order is valid, but infrastructure-first gives the earliest tangible win.
+
+**Architectural note for J3:** the network-resilience guarantee stays in the host (the aggregate OFFLINE_BUFFERING logic in `reconcileOperationalState`), generalised to fold over all components. Components only expose “buffering? / queued count.” Don’t scatter reconnection logic into components.
+
+---
+
+## 2026-06-13 (Codex build run) — Full mock-first MVP implemented
+
+### What was built
+
+The scaffolded three-file sketch was replaced with a modular MVP:
+
+- `capture/` now contains `AudioSource` adapters (`mock`, `arecord`, `file`), `WavChunkWriter`, `MockTranscriptProvider`, and an isolated `ElevenLabsRealtimeProvider`.
+- `relay/` now persists transcript segments and relay queue rows in SQLite, posts to ingest with idempotency headers, retries with backoff, and drains in sequence order.
+- `control/` now serves the local dashboard, `/status`, `/events`, `/transcript`, `/report/:sessionId`, `/mock/ingest`, and `/simulate/*`.
+- `state/` now provides a strict finite state machine, typed event bus, and health log persistence.
+- `db/` now owns migrations and typed repositories for the seven-table schema.
+- `report/` now generates session reports and renders a styled MeetPaper HTML article by default, with JSON still available through `Accept: application/json`.
+- `hardware/` now defaults to a console controller and keeps GPIO dormant but safely isolated.
+- `public/` now contains the vanilla dashboard for the mock-first demo story.
+- `test/` now covers state transitions, queue ordering, idempotency, WAV writing, mock transcript output, and an API smoke flow.
+
+### What is real vs mocked
+
+- **Mock by default:** audio source, transcript provider, ingest receiver, dashboard demo flow.
+- **Real but not live-verified yet:** `ARecordAudioSource`, SQLite persistence, relay retry logic, report generation, Fastify control surface.
+- **Implemented from documented assumptions and intentionally isolated:** `ElevenLabsRealtimeProvider`.
+
+### Assumptions and notable decisions
+
+- The ElevenLabs realtime adapter assumes the current documented websocket endpoint, `xi-api-key` auth, `pcm_s16le` 16kHz mono audio, and JSON frames that distinguish partial/final transcripts through `is_final` or an equivalent final marker. This still needs live J2 verification on real Pi hardware.
+- The report route now defaults to styled HTML because the demo close needs a readable editorial surface; JSON remains available for tooling and inspection.
+- The dashboard remains mock-first and browser-mic-free. All capture still happens server-side.
+- Queue flushes triggered manually by reconnect use an immediate drain path, while the background interval still honours backoff timing.
+
+### Verification
+
+- `bash scripts/preflight.sh` passed with warnings only for missing `.env` and missing dependencies before install.
+- `npm run typecheck` passed.
+- `npm test` passed.
+- `npm run build` passed.
+
+### Open issues after the build
+
+- J2 still needs live Pi verification for `arecord`, the M-305 device string, and the real ElevenLabs websocket payload.
+- J3 still needs the PHP/apm ingest receiver at `voice.apresmeet.com/ws/station/ingest`.
+- J4 still needs remote pairing validation and token exchange.
+
+## 2026-06-13 (later still) — Dashboard design reference wired in
+
+**Concern raised:** the dashboard is the surface judges actually see, and an LLM building vanilla-JS UI as phase 6 of a 10-phase build tends to produce something correct but visually flat — weak hierarchy, an underwhelming offline banner.
+
+**Fix:** copied the MeetPaper Station concept paper into the repo at `devops/design/meetpaper_station_concept.html` as an in-scope **visual reference** (Codex runs scoped to pi-station and may not reach the original at `apm/devops/design/`). Rewrote build-prompt §15 to (a) point at that file and instruct “match this design language, don’t reinvent it,” (b) sharpen the layout into live-strip / masthead / instrument-cluster status strip / nav-style controls / transcript / health log, (c) make the three state banners explicit emotional beats — the amber `OFFLINE — AUDIO SAFE` banner is the peak and must appear instantly. Also upgraded §14: the report now renders as a **styled MeetPaper HTML article** (not raw JSON) for the demo's closing beat, with JSON still available via `Accept: application/json`. Added `report/reportHtml.ts` to the structure.
+
+The two surfaces worth a manual polish pass after the build are the dashboard and the report; the rest (capture/relay/queue) is covered by the vitest suite.
+
+---
+
+## 2026-06-13 (later) — Build plan upgraded to full mock-first MVP
+
+### The change
+
+The original scaffold (three flat files `src/capture.ts`, `src/relay.ts`, `src/control.ts`) was a thin first sketch aimed at a Pi-first smoke test. After review — including an external second opinion from ChatGPT — the build plan was **upgraded to a complete mock-first MVP** that runs end-to-end on a laptop with **no microphone, no ElevenLabs key, no Pi, and no cloud endpoint.**
+
+**Why this matters more than the Pi-first plan:** a hackathon demo cannot depend on live hardware, live credentials, or venue Wi-Fi — the very things that fail. By making mock mode first-class and driving the whole network-drop story from in-app `/simulate/*` endpoints, the demo is bulletproof and reproducible, and the real adapters (arecord, ElevenLabs, ApresMeet ingest) slot in behind interfaces without ever breaking mock mode.
+
+### Decisions locked
+
+- **Mock-first architecture.** `AudioSource`, `TranscriptProvider`, `HardwareController`, ingest are all interfaces with a mock default and a real implementation selected by env var. Mock mode is the demo path and must never be broken.
+- **Finite state machine** drives both dashboard and (dormant) hardware: IDLE / PAIRING / READY / RECORDING / OFFLINE_BUFFERING / SYNCING / PAUSED / STOPPING / REPORT_READY / ERROR.
+- **`/simulate/network/{down,up}` and `/simulate/stt/{drop,reconnect}`** are the engine of the demo — the amber "OFFLINE — AUDIO SAFE" moment is triggered from the dashboard, no real network manipulation needed.
+- **Local dashboard** in vanilla HTML/CSS/JS using the real MeetPaper design tokens (DM Serif Display masthead, burgundy `#7A1F2B`, teal `#00C49A`, amber `#F5A623`). No React.
+- **Richer data model** — 7 SQLite tables (sessions, transcript_segments, relay_queue, audio_chunks, session_events, insight_marks, station_config) instead of the original single queue table.
+- **WAV header repair on startup** — proves audio survives a crash, not just a network drop.
+- **Insight marks** — a "Mark Insight" button bookmarks ±30s with transcript excerpt; gives the demo a tangible artefact and a clean hook to MeetPaper's editorial layer.
+- **Report on stop** — `data/reports/<id>.json` served at `/report/:id`, with a disabled `summariseWithLLM()` hook for later.
+- **`vitest` test suite** — state machine, queue ordering, idempotency, WAV writer, mock transcript, API smoke. All run without hardware.
+
+### Superseded
+
+The flat `src/capture.ts`, `src/relay.ts`, `src/control.ts` from the morning scaffold are **superseded** by the modular `capture/ relay/ control/ state/ db/ report/ hardware/` structure in the build prompt. A fresh build run replaces them. Everything else from the scaffold stands (package.json baseline, tsconfig extending f365 base, .claude full-auth, CLAUDE.md, devops/ai/*, deploy-pi.sh, device-config.md).
+
+### The single-shot build prompt
+
+`devops/ai/prompts/PI_STATION_J1_full_mvp_build.md` is a complete, self-contained build brief — every module, the data model, the API contract, the dashboard spec, the test list, the build order, and the acceptance criteria. Designed to be executed in one continuous run by GPT-5 Codex (hackathon token budget) or Claude Opus, in full-authorisation mode, with no approval prompts. `job.md` points at it, STATUS READY.
+
+### Added dependencies (vs morning scaffold)
+
+`dotenv`, `zod`, `pino`, `pino-pretty` (deps); `vitest`, `@vitest/coverage-v8` (devDeps). Plus `tsx` already present.
+
+---
+
+## 2026-06-13 (morning) — Hackathon day, initial scaffold (Agents in the Wild, Blue Garage Lewisham)
 
 ### Context
 
@@ -20,28 +308,6 @@ One Raspberry Pi 5 (4GB) borrowed for the day. Mini USB Mic M-305 available. Hac
 
 **Not inside the `apm` repo:** apm is PHP + jQuery deployed to Elastic Beanstalk. Pi deploys via rsync + pm2 over SSH. Completely different deployment targets — mixing them would require careful `.ebignore` maintenance forever and risk pushing Node modules to EB.
 
-### What was built
-
-- Full project scaffold: `src/`, `devops/`, `scripts/`
-- `src/config.ts` — environment config, typed, `as const`
-- `src/capture.ts` — `CaptureService` extending `EventEmitter`: arecord spawn, ElevenLabs Scribe v2 WS, rolling WAV buffer (30s chunks), segment event emission, auto-reconnect
-- `src/relay.ts` — `RelayService`: SQLite queue, POST to `voice.apresmeet.com`, exponential backoff flush, queue depth reporting
-- `src/control.ts` — Fastify HTTP API: `/start /stop /pause /resume /pair /status`, CORS for Live Desk
-- `src/index.ts` — entry point, boots all three services, graceful shutdown
-- `scripts/deploy-pi.sh` — rsync + pm2 deploy script
-- `devops/ai/` — full START_HERE / diary / memory / job / project / ideas structure mirroring f365
-
-### What has NOT been done yet
-
-- [ ] `npm install` on the Pi
-- [ ] Physical test with arecord + M-305 mic
-- [ ] Real ElevenLabs credentials in `.env` on the Pi
-- [ ] `voice.apresmeet.com/ws/station/ingest` endpoint on the apm side (receiver not yet built)
-- [ ] `POST /pair` validation against server (stub only)
-- [ ] pm2 startup hook (`pm2 startup` on Pi)
-- [ ] Audio device string confirmed (`arecord -l` on Pi)
-- [ ] Mac dev substitute for arecord (sox/ffmpeg mock)
-
 ### Hardware confirmed available
 
 - Raspberry Pi 5 (4GB) × 2 units (one in box, one bare board)
@@ -49,13 +315,32 @@ One Raspberry Pi 5 (4GB) borrowed for the day. Mini USB Mic M-305 available. Hac
 - MicroSD card
 - No USB-C power bank on hand today — single point of failure for power
 
-### Open questions
+---
 
-1. **`plughw:1,0` assumption** — does the M-305 enumerate at device index 1 on Pi OS with no other peripherals? Verify with `arecord -l` on first boot.
-2. **ElevenLabs Scribe v2 streaming API** — confirm the exact WS URL and session config JSON format against current ElevenLabs docs before first live test.
-3. **`voice.apresmeet.com/ws/station/ingest`** — this endpoint needs to be built on the apm/VI side to receive POST payloads from pi-relay. What auth does it expect? Bearer token tied to the session code?
-4. **Session pairing UX** — the 6-digit code concept is designed but the matching server-side `/ws/station/pair` validation endpoint does not exist yet.
-5. **Mac dev audio mock** — needed before any meaningful local testing of the full pipeline. `sox` or `ffmpeg` piping a WAV file through stdout would substitute for `arecord`.
+## 2026-06-21 — J2 Pi provisioning complete
+
+### What was done
+
+- Re-flashed microSD via Raspberry Pi Imager with correct hostname (`pistation`), username (`pistation`), Wi-Fi (iPhone hotspot SSID `2703369`), SSH enabled
+- Diagnosed mDNS failure: hostname was `pistation.local` not `pi-station.local`; user was `pistation` not `pi`. Discovered by mounting SD on Mac and reading `/Volumes/bootfs/network-config` + `user-data`
+- Set up SSH key auth (`~/.ssh/pi_station_key`, ed25519) via `expect` (no sshpass/brew on Mac)
+- Added `Host pistation.local` to `~/.ssh/config`
+- Ran `scripts/provision-pi.sh`: installed sqlite3, python3-venv, Node 22 via fnm, pm2
+- Updated `shared/src/PlatformConfig.ts` and `core/src/config.ts` to add `faster-whisper` as STT provider option
+- Created `scripts/transcribe.py` (faster-whisper batch transcription)
+- Updated `scripts/deploy-pi.sh`: changed user to `pistation`, build on Mac not Pi (Pi lacks f365 tsconfig.base.json), rsync dist/ included
+- Deployed app to Pi: pm2 started `apps/meet-station/dist/index.js`, status API returning `{"ok":true}`
+- Configured pm2 auto-start via systemd (`pm2-pistation.service`)
+- Installed faster-whisper in `/home/pistation/pi-station/venv-whisper`, downloaded `base.en` model (142MB)
+- **Confirmed audio device:** M-305 appears as `card 2: Device [USB PnP Sound Device]` → `AUDIO_DEVICE=plughw:2,0`
+- **Confirmed real recording:** 8s session wrote `chunk-000001.wav` (251KB)
+- **Confirmed faster-whisper transcription:** real speech from M-305 transcribed to 4 segments with word-level timestamps
+
+### Key deviations from the plan
+
+- Username/hostname in Imager was `pistation` not `pi`/`pi-station` — caused mDNS failure. Fixed by reading boot partition.
+- Build must happen on Mac, not Pi — Pi doesn't have `../f365/tsconfig.base.json`. Deploy script updated to rsync `dist/`.
+- Audio card index is **2**, not the assumed **1** — M-305 appeared as card 2 on this Pi.
 
 ---
 
@@ -63,9 +348,9 @@ One Raspberry Pi 5 (4GB) borrowed for the day. Mini USB Mic M-305 available. Hac
 
 | # | Issue | Status |
 |---|---|---|
-| 1 | arecord device string confirmation on Pi | ⏳ pending first Pi boot |
-| 2 | ElevenLabs Scribe v2 WS API format verification | ⏳ pending |
-| 3 | `voice.apresmeet.com/ws/station/ingest` receiver endpoint (apm side) | ⏳ not built |
-| 4 | Session pairing server-side validation | ⏳ not built |
-| 5 | Mac dev audio mock (sox/ffmpeg) | ⏳ not built |
-| 6 | pm2 startup hook on Pi | ⏳ pending Pi setup |
+| 1 | arecord device string confirmation on Pi (`arecord -l`) | ✅ Confirmed: `plughw:2,0` (card 2) |
+| 2 | ElevenLabs Scribe v2 WS API format verification | ⏳ pending — mock provider works |
+| 3 | `voice.apresmeet.com/ws/station/ingest` receiver endpoint (apm side) | ⏳ not built (J4) — mock ingest covers demo |
+| 4 | Session pairing server-side validation (`PAIRING_MODE=remote`) | ⏳ not built (J4) — local pairing works for demo |
+| 5 | pm2 / systemd startup hook on Pi | ✅ Configured (`pm2-pistation.service`) |
+| 6 | USB-C power-bank UPS (no battery backup on hand) | ⏳ to acquire — not blocking demo |

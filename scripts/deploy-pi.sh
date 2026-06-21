@@ -10,27 +10,38 @@
 
 set -euo pipefail
 
-PI_HOST="${1:-pi-station.local}"
-PI_USER="pi"
-PI_DIR="/home/pi/pi-station"
+PI_HOST="${1:-pistation.local}"
+PI_USER="pistation"
+PI_DIR="/home/pistation/pi-station"
 
 echo "▶ Deploying to ${PI_USER}@${PI_HOST}:${PI_DIR}"
 
-# 1. Sync source files (exclude node_modules, dist, local runtime files)
+# 1. Build locally first (TypeScript compile on Mac, not Pi)
+echo "  Building locally..."
+npm run build
+
+# 2. Sync source + compiled dist (exclude node_modules and local runtime files)
 rsync -avz --delete \
   --exclude 'node_modules/' \
-  --exclude 'dist/' \
   --exclude '.env' \
-  --exclude 'buffer/' \
+  --exclude 'data/' \
   --exclude '*.db' \
   --exclude '*.log' \
   . "${PI_USER}@${PI_HOST}:${PI_DIR}"
 
-# 2. Install dependencies on the Pi
-ssh "${PI_USER}@${PI_HOST}" "cd ${PI_DIR} && npm install --production"
+# 3. Install production dependencies on Pi (no build step needed)
+ssh "${PI_USER}@${PI_HOST}" "
+  export PATH=\"\$HOME/.local/share/fnm:\$PATH\"
+  eval \"\$(fnm env)\" 2>/dev/null || true
+  cd ${PI_DIR} && npm install --omit=dev
+"
 
-# 3. Restart via pm2 (keeps the process alive across terminal sessions)
-ssh "${PI_USER}@${PI_HOST}" "cd ${PI_DIR} && pm2 restart pi-station 2>/dev/null || pm2 start dist/index.js --name pi-station"
+# 4. Restart via pm2
+ssh "${PI_USER}@${PI_HOST}" "
+  export PATH=\"\$HOME/.local/share/fnm:\$PATH\"
+  eval \"\$(fnm env)\" 2>/dev/null || true
+  cd ${PI_DIR} && pm2 restart pi-station 2>/dev/null || pm2 start apps/meet-station/dist/index.js --name pi-station
+"
 
 echo "✓ Deployed and restarted on ${PI_HOST}"
 echo ""

@@ -6,16 +6,33 @@
 
 ---
 
-## 1. The one invariant that cannot break
+## 1. The three guarantees — what Pi-Station exists to deliver
 
-**Recording must survive a network drop.**
+Pi-Station does exactly three things, and does them with complete reliability regardless of network state:
 
-If `voice.apresmeet.com` is unreachable for any reason — venue Wi-Fi down, ElevenLabs WS dropped, DNS failure, anything — the Pi must:
-1. Keep recording audio to the local WAV buffer.
-2. Queue committed segments in SQLite (`queue.db`).
-3. Flush the queue, in `captured_at` order, when connectivity returns.
+1. **Audio** — WAV buffer, always, gapless. The mic never stops writing to disk.
+2. **Video** — local MP4 chunks, always. The camera never stops writing to disk.
+3. **Transcript** — Whisper STT runs locally. The session has a usable transcript even if ElevenLabs was unreachable for the entire event.
 
-The host's browser being closed, the laptop dying, the tab navigating away — none of these should stop recording. The Pi is the recording device; the browser is just the control surface.
+These three are the capture guarantee. Everything else is the cloud's job:
+- **CoCo** does post-session AI intelligence (summaries, insights). Do not duplicate this on the Pi — CoCo has real compute; the Pi at 5 t/s is a compromise, not a feature.
+- **MeetPaper / Media Desk** handle publishing and distribution.
+- **ElevenLabs** is an optional admin-triggered quality upgrade, not a dependency.
+- The Pi does not post-process, does not summarise, does not speak back to the room.
+
+**The boundary is the product.** The Pi is physically present in the room and guarantees capture. The cloud is everywhere else.
+
+---
+
+## 1a. Pi-Station is a generic multi-component capture platform
+
+Voice is the first component. Video is the second. Others (Bluetooth interaction, etc.) will follow. The host owns: device, session lifecycle, SQLite, control API, dashboard, aggregate state machine, and the network-resilience guarantee. Each component owns: its source, its local buffer, its optional relay, its status, and its report contribution.
+
+- Implement `StationComponent` interface (`src/components/StationComponent.ts`) for every new capability.
+- Register in `src/components/registry.ts`, enable via `ENABLED_COMPONENTS` env var.
+- Station is OFFLINE_BUFFERING if **any** component is buffering. Healthy only when **all** drain.
+- Resilience logic lives in the host — components only report `buffering: boolean` and `queuedItems: number`.
+- After J3: anything voice-specific lives in `src/components/voice/`. Anything video-specific in `src/components/video/`. Nothing component-specific in `StationApp`.
 
 ---
 
@@ -109,3 +126,74 @@ CREATE TABLE IF NOT EXISTS queue (
 - **Never deploy `node_modules`** — `npm install --production` on the Pi after rsync.
 - **Build before deploy:** `npm run build` locally, rsync `dist/` to the Pi (faster than running `tsx` in production).
 - **Audio device config:** document the confirmed `arecord` device string in `devops/hardware/device-config.md` after first physical setup.
+
+---
+
+## 8. STT on the Pi — technology choice (quality first)
+
+**The choice is between Vosk, faster-whisper, and ElevenLabs Scribe. Choose based on what is best for the product, not what the hackathon recommends.**
+
+| Provider | Accuracy | Latency | Offline | Diarisation | Verdict |
+|---|---|---|---|---|---|
+| Vosk (small-en) | Basic | Live streaming | Yes | No | Too weak for professional events |
+| faster-whisper (base.en) | Good | Near-real-time | Yes | No | Right local quality ceiling |
+| faster-whisper (small.en) | Very good | ~2× audio | Yes | No | Better accuracy, slower |
+| ElevenLabs Scribe v2 | Excellent | Live streaming | No | Yes | Best quality, requires internet |
+
+**The honest recommendation for this product:**
+
+- **Primary (online):** ElevenLabs Scribe v2. Best accuracy, live streaming, diarisation. This is what professional organisers expect.
+- **Local fallback (offline):** faster-whisper with `base.en` or `small.en`. Better accuracy than Vosk. Runs post-session batch on the buffered WAV when internet is unavailable. The admin can choose to upgrade via ElevenLabs later (J7).
+- **Vosk is not recommended** for this product. Its accuracy is too low for professional event transcription. The fact that the hackathon recommends it is not a reason to use it.
+
+**Provider interface** (`STT_PROVIDER` env var): `mock` | `elevenlabs` | `faster-whisper`. No Vosk implementation needed unless a specific use case emerges that requires it.
+
+**faster-whisper installation on Pi:**
+```bash
+pip install faster-whisper
+# Model download (one-time):
+python -c "from faster_whisper import WhisperModel; WhisperModel('base.en')"
+# base.en: ~145MB, good quality. small.en: ~466MB, better quality.
+```
+Runs as a Python subprocess called from the Node.js SyncService after session stop. Not a live streaming provider — a batch provider that processes WAV chunks and returns transcript segments with timestamps.
+
+---
+
+## 9. AI HAT+ (26 TOPS Hailo NPU) — vision only, not STT
+
+The quickstart rule of thumb: **AI HAT+ for live camera-based vision, CPU for STT/TTS/LLM.**
+
+- Accelerates: face detection, object detection, pose estimation, segmentation — at 30fps vs 1–2fps on CPU
+- Does NOT accelerate: Whisper, Vosk, Ollama, NeuTTS — these are CPU-bound regardless
+- Auto-detected by Pi OS via PCIe Gen 3. Install: `sudo apt install hailo-all && sudo reboot`
+- Check: `hailortcli fw-control identify`
+- Run vision: `rpicam-hello -t 0 --post-process-file /usr/share/rpi-camera-assets/hailo_yolov8_inference.json`
+- 26 TOPS: can run multiple models simultaneously (face detection + pose + object detection all at once)
+- Models must be compiled to Hailo format on x86 first — pre-compiled models available via rpicam-apps
+
+---
+
+## 10. Pan/tilt speaker-tracking camera — the vibrant event feature
+
+The kit contains everything needed: Pi Camera Module (CSI), PCA9685 servo driver (I2C), MG996R + SG90 servos.
+
+**Architecture:**
+- AI HAT+ face detection at 30fps → face bounding box centre position in frame
+- Compute pan/tilt delta: `error_x = face_centre_x - frame_width/2`, same for y
+- PCA9685 over I2C → PWM servo commands (use `adafruit-circuitpython-pca9685` or `gpiozero`)
+- MG996R servo for pan (needs torque for camera weight), SG90 for tilt
+- Smooth tracking: apply a deadzone (don´t move if face is within ±20px of centre) + low-pass filter on servo position to avoid jitter
+
+**Voice-face locking heuristic (hackathon-grade):**
+1. Voice activity detection: energy threshold on audio stream (`audioop.rms` or similar)
+2. On speech start → lock to face nearest frame centre
+3. Servo smoothly tracks that face’s bounding box centre
+4. On 2s silence → release lock, return to neutral
+
+**Servo range:** 0–180 degrees per servo (standard PWM). Two servos cover the full frontal arc of a seated panel. True 360-degree rotation requires continuous-rotation servos (not in the kit).
+
+**Camera module:** CSI ribbon connector, contacts facing the USB ports. Test first with `rpicam-hello`.
+
+**The PCA9685 drives servos over I2C** — one I2C link controls 16 channels. Power the servos from a separate 5V supply (not from the Pi’s GPIO pins — Pi GPIO is 3.3V only and cannot supply servo current).
+
+**NeuTTS spoken announcements (optional):** the kit includes MAX98357 amp + wired speaker. NeuTTS runs on CPU (not HAT+). Can speak “Recording started”, “Syncing”, “Session saved” through the amp. Keep behind a feature flag; not a core dependency.

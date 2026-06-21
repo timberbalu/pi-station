@@ -1,32 +1,29 @@
 {
-  "name": "@pi-station/core",
+  "name": "pi-station",
   "version": "0.1.0",
   "private": true,
-  "description": "MeetPaper Station — local audio ingestion server for Voice Intelligence",
+  "description": "Pi-Station platform — MeetStation is the first edge app",
   "type": "module",
   "engines": {
     "node": ">=22 <23"
   },
+  "workspaces": [
+    "shared",
+    "core",
+    "hardware",
+    "apps/meet-station"
+  ],
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "capture": "tsx src/capture.ts",
-    "relay": "tsx src/relay.ts",
-    "control": "tsx src/control.ts"
-  },
-  "dependencies": {
-    "fastify": "^4.28.0",
-    "better-sqlite3": "^11.5.0",
-    "ws": "^8.18.0",
-    "node-fetch": "^3.3.2"
+    "dev": "node --import tsx/esm apps/meet-station/src/index.ts",
+    "build": "tsc -b",
+    "start": "node apps/meet-station/dist/index.js",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run --config apps/meet-station/vitest.config.ts"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.12",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
   }
 }

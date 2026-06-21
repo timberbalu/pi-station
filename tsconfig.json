@@ -2,10 +2,18 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../f365/tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "baseUrl": ".",
+    "paths": {
+      "@pi-station/shared": ["shared/src/index.ts"],
+      "@pi-station/core": ["core/src/index.ts"],
+      "@pi-station/hardware": ["hardware/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "files": [],
+  "references": [
+    { "path": "./shared" },
+    { "path": "./core" },
+    { "path": "./hardware" },
+    { "path": "./apps/meet-station" }
+  ]
 }

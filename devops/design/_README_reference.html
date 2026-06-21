@@ -1,0 +1,23 @@
+<!--
+  MeetPaper Station — CONCEPT PAPER (visual reference for the dashboard build)
+
+  This is the editorial concept paper for MeetPaper Station. It is NOT the dashboard.
+  It is here as the authoritative VISUAL REFERENCE for building the live dashboard
+  at src/public/index.html — match its design language exactly:
+
+    - Palette (exact hex): paper #F3ECD9, paper-2 #ECE3CC, ink #1A1815, ink-3 #6B645B,
+      accent/burgundy #7A1F2B, teal #00C49A, gold #B98A2C, amber (offline) #F5A623
+    - Fonts: DM Serif Display (masthead + headings), Source Serif 4 (body + italic
+      straplines), Inter (UI labels — uppercase, letter-spaced), JetBrains Mono (metrics/code)
+    - The masthead: "MeetPaper" with "Meet" in #1A1815 and "Paper" in #7A1F2B, set in
+      DM Serif Display at a large size, with explicit per-span colour (NOT CSS variables —
+      they broke on file:// during the concept-paper build; hardcode the colours).
+    - The dark live-strip, the section-nav bar style (black bar, uppercase Inter,
+      active underline in accent), the teal pulsing LED dot, the dashed-rule dividers,
+      the editorial cream surface floating on a warm neutral stage.
+
+  Study the CSS in this file's <style> block and reuse the same tokens, type scale,
+  and component treatments in the dashboard. The dashboard is a LIVE control surface
+  (status strip, controls, transcript, health log, banners) — but it must feel like
+  it belongs to the same product as this paper.
+-->

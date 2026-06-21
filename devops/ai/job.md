@@ -4,61 +4,61 @@
 
 ---
 
-STATUS: READY
+STATUS: DONE
 
-**Prompt:** `devops/ai/prompts/PI_STATION_J1_full_mvp_build.md`
+**Prompt:** `devops/ai/prompts/PI_STATION_J2_pi_provisioning.md`
 
-**Job:** Build the complete MeetPaper Station MVP in a single continuous run — mock-first, demo-ready, no hardware or credentials required to run.
+**Job:** Provision the Raspberry Pi 5, deploy MeetStation, confirm real M-305 audio capture and faster-whisper transcription.
 
-**Run in full-authorisation mode.** `.claude/settings.json` + `CLAUDE.md` pre-authorise every operation. The LLM must not pause to ask for approval. Make sensible assumptions, document them, keep building.
-
-**Recommended model/provider:** GPT-5 Codex (hackathon token budget) or Claude Opus. This is a large multi-module build — capability matters; it cannot be cheaply rebuilt.
+**Completed:** 2026-06-21
 
 ---
 
-### What this builds (one pass)
+## Previous job (J2b — complete)
 
-A complete, runnable MeetPaper Station: a Raspberry Pi 5 local audio-ingestion server for ApresMeet Voice Intelligence. The Pi is the sole capture point; the browser is a control surface only.
+**Prompt:** `devops/ai/prompts/PI_STATION_J2b_platform_restructure.md`
 
-**The one invariant:** recording survives a network drop. Cloud unreachable → audio keeps writing to disk, segments queue in SQLite, queue flushes gaplessly on reconnect.
+**Job:** Restructure the codebase from a single-app project into a proper platform. Pi-Station is the platform (the F365 of edge hardware). MeetStation is the first app. Four npm workspaces: `shared` (PiApp interface), `core` (DB, state, config, logger), `hardware` (servo/camera stubs), `apps/meet-station` (everything built in J1, renamed). Pure structural refactor — zero logic changes, all 7 tests must still pass, mock demo must run identically after.
 
-**Modules:**
-- `capture/` — AudioSource (mock / arecord / file replay), WavChunkWriter (rolling 30s, header repair on startup), TranscriptProvider (mock / ElevenLabs Scribe v2)
-- `relay/` — SQLite queue, chronological idempotent flush, exponential backoff
-- `control/` — Fastify API (`/status /pair /start /pause /resume /stop /mark` + `/simulate/*` fault injection + `/mock/ingest`)
-- `state/` — StationStateMachine (IDLE…RECORDING…OFFLINE_BUFFERING…SYNCING…REPORT_READY), event bus, health log
-- `db/` — better-sqlite3, TS migrations, typed repositories (7 tables)
-- `report/` — report JSON on stop, served at `/report/:id`
-- `public/` — MeetPaper-styled vanilla-JS dashboard (real meetpaper.css tokens)
-- `hardware/` — console controller (default) + dormant GPIO controller
-- `test/` — vitest: state machine, queue ordering, idempotency, WAV writer, mock transcript, API smoke
-- `docs/`, `systemd/`, `scripts/` — Pi setup, demo script, architecture, audio check
+**Run in full-authorisation mode.** No approval prompts needed.
 
-**The decisive constraint:** the entire demo runs in mock mode with no microphone, no ElevenLabs key, no Pi, no cloud. Mock mode is first-class and must never be broken by the real adapters.
+**Recommended model:** Claude Opus or GPT-5 Codex.
+
+**This is a move/rename refactor, not a rewrite.** The prime directive: `npm test` stays green and the mock demo runs identically at every intermediate step.
 
 ---
 
 ### Gate (acceptance — all must hold)
 
-1. `npm run dev` runs in mock mode with no hardware/credentials
-2. Dashboard at `http://localhost:3456`
-3. Pair → Start → mock transcript appears → WAV chunks written
-4. Simulate network down → queue grows, state OFFLINE_BUFFERING, amber "OFFLINE — AUDIO SAFE" banner
-5. Reconnect → SYNCING → queue flushes to zero in order → RECORDING
-6. Mark Insight stored; Stop → report opens, gapless
-7. `npm test` green, `npm run build` clean
-8. No secrets committed
+1. `shared/`, `core/`, `hardware/`, `apps/meet-station/` exist as npm workspaces
+2. `PiApp` interface in `shared/src/PiApp.ts`
+3. `MeetStationApp` class in `apps/meet-station/src/MeetStationApp.ts`
+4. `hardware/` has stub `PanTiltController` + `CameraController`
+5. `npm run typecheck` clean across all workspaces
+6. `npm test` — 7 tests green
+7. `npm run dev` — full mock demo unchanged from J1
+8. Old `src/` directory removed
+9. `CLAUDE.md` + `README.md` updated to reflect platform architecture
 
 ---
 
-### Reconcile, don't overwrite
+### Done — J1 (complete, verified 2026-06-13)
 
-The repo is already scaffolded (package.json, tsconfig extending ../f365 base, .env.example, .claude/settings.json, CLAUDE.md, devops/ai/*, scripts/deploy-pi.sh, devops/hardware/device-config.md). The three flat files `src/capture.ts` / `src/relay.ts` / `src/control.ts` are a first sketch — replace them with the richer modular structure in the prompt (§2, §4). Keep everything else; add deps (`dotenv`, `zod`, `pino`, `pino-pretty`, `vitest`).
+J1 built the full mock-first MVP in `src/`. All tests green, build clean, mock demo runs end to end.
 
 ---
 
-### After J1 (next jobs)
+### Next job
 
-- **J2 — ElevenLabs live on Pi:** real `ELEVENLABS_API_KEY`, confirm Scribe v2 WS wire format, first physical capture with the M-305 mic. Confirm `arecord -l` device string and update `AUDIO_DEVICE`.
-- **J3 — apm receiver endpoint:** build `voice.apresmeet.com/ws/station/ingest` on the PHP/apm side to receive segment POSTs. Bearer auth tied to `session_code`; write to `VI_TRANSCRIPT_SEGMENTS`.
-- **J4 — remote pairing:** `POST /pair` in `PAIRING_MODE=remote` validates against `voice.apresmeet.com/ws/station/pair`, returns `session_id` + short-lived `station_token`.
+- **J3 — Component platform** (`prompts/PI_STATION_J3_component_platform.md`): refactor MeetStationApp into a host that runs pluggable StationComponents. Voice becomes VoiceComponent; dormant VideoComponent stub added.
+
+### Remaining queued jobs
+
+- **J3 — Component platform** (`prompts/PI_STATION_J3_component_platform.md`): refactor MeetStationApp into a host that runs pluggable components. Voice becomes VoiceComponent; dormant VideoComponent stub.
+- **J3b — Sync Service** (`prompts/PI_STATION_J3b_sync_service.md`): phased offline→online sync via S3 presigned URLs. Resumable. No data loss.
+- **J4 — apm ingest receiver**: manifest + segment + media + sync-complete on PHP/apm side.
+- **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
+- **J6 — VideoComponent + pan/tilt**: libcamera, rolling MP4, AI HAT+ face detection, PCA9685 servo tracking.
+- **J7 — Cloud upgrade path**: admin re-submits WAV to ElevenLabs; replaces local transcript in VI.
+
+**Dropped:** Ollama, NeuTTS, Vosk (reasons in diary and memory.md).

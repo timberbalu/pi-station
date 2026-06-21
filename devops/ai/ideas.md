@@ -1,25 +1,57 @@
 # pi-station — Ideas parking lot
 
 > Future possibilities. Not committed. Not prioritised. Just captured so they don't get lost.
+> Decisions already made are in diary.md and memory.md — not here.
 
 ---
 
-## Hardware expansions
+## STRATEGIC INTENT — settled 2026-06-13
 
-- **Multi-mic mixing via USB hub** — one lavalier per speaker, mixed on the Pi before streaming to ElevenLabs. Better diarisation for panel sessions.
-- **Small OLED display** (SSD1306 via I2C) — show recording state, queue depth, WS status without needing a browser. Visible at a glance on the venue table.
-- **Physical start/stop button** — GPIO button on the Pi to start/stop recording without touching the browser. Useful when the host doesn't want to touch a laptop mid-session.
-- **USB-C UPS integration** — detect power bank battery level via USB PD and surface it in `/status`. Alert the Live Desk when battery is low.
+**The hackathon is a growth hacking technique, not a competition.** The goal is not to win prizes or use every sponsor technology. The goal is to build something that becomes a real, lasting part of ApresMeet and Foundry365. Raspberry Pi itself is the prize — getting it into the product stack is the win.
 
-## Software expansions
+This means:
+- Choose the **best technology for the product**, not the technology the hackathon recommends.
+- Don't use sponsor tech (Vosk, NeuTTS, Ollama) unless it genuinely serves the roadmap better than the alternative.
+- Build something **future-proof and production-quality**, not a hackathon prototype that gets thrown away.
+- Every architectural decision should be one you'd make if building for production today.
 
-- **ElevenLabs TTS post-processing** — after session ends, send the AI summary through ElevenLabs TTS to generate an audio summary clip for the Media Desk episode.
-- **Highlight reel** — splice the top 3-5 approved pull quote timestamps from the WAV buffer into a short shareable audio clip.
-- **Local Kaa node** — run a small LLM (llama3.2:3b via Ollama) alongside pi-station to do local-first classification of transcript segments before they're posted. Opportunity detection without cloud dependency.
-- **Mac dev audio mock** — `src/capture-mock.ts` substituting arecord with `ffmpeg`/`sox` for local development. Selectable via `AUDIO_DEVICE=mock` env.
+---
 
-## Product ideas
+## PRODUCT BOUNDARY — settled 2026-06-13
 
-- **MeetPaper Station as a product** — organisers buy or rent a pre-configured Pi. Pairs with any session via a 6-digit code. Sits in a bag until needed. Could ship as a product bundle with a recommended USB mic.
-- **Station rental model** — ApresMeet provides hardware for a fee per event. The Pi is registered to the organiser's account, locks to their VI subscription.
-- **Event presence beacon** — combine Station with BLE advertising so attendees with the ApresMeet PWA auto-check in when they enter the room. One device, three functions: audio capture + Kaa intelligence + presence detection.
+Pi-Station does three things, and does them with complete reliability:
+
+1. **Audio** — WAV buffer, always, gapless, regardless of network
+2. **Video** — local chunks, always, synced when connection allows
+3. **Transcript** — Whisper STT, local, private, good enough to be useful
+
+Everything beyond those three is the cloud's job.
+
+- **CoCo** handles post-session AI intelligence (summarisation, insight extraction). Running Ollama on the Pi to duplicate this at 5 tokens/second would be a compromise, not a feature. Dropped from the roadmap.
+- **MeetPaper / Media Desk** handle distribution, publishing, attendee delivery. The Pi doesn't publish.
+- **ElevenLabs** is an optional quality upgrade — admin re-processes WAV through Scribe if they want higher-quality diarised transcript. The Pi doesn't make that decision.
+- **NeuTTS** — not adding. TTS is not in scope; the Pi doesn't speak back to the room.
+
+The Pi's job is to be physically present in the room and guarantee capture. The cloud's job is everything that benefits from real compute and connectivity. Don't muddy the boundary.
+
+---
+
+## Hardware ideas (future)
+
+- **AI HAT+ / AI HAT+ 2 (Hailo NPU)** — Biju receives one by Thursday. 13 or 26 TOPS (original) or 40 TOPS (HAT+ 2). Auto-detected by Pi OS via PCIe Gen 3; `rpicam-apps` natively offloads vision inference to the NPU. For VideoComponent: real-time face detection, pose estimation, face-to-speaker mapping, slide detection — all on the NPU with zero CPU overhead. Models must be compiled to Hailo format on x86 first. Does NOT accelerate Whisper (CPU-bound). This is the upgrade that makes VideoComponent genuinely intelligent, not just raw capture.
+- **Two-Pi production architecture** — Pi 1 (with AI HAT+): intelligent capture node — camera + audio + real-time NPU face detection during the session. Pi 2: processing node — Whisper post-session, SyncService, control API. Both units already available. Pi 1 handles the time-sensitive real-time work; Pi 2 handles the CPU-heavy post-session work without competing for the same resources. The production device is this pair.
+- **NVMe SSD via Pi 5 PCIe slot** — 5× faster writes than microSD; no wear concern for production units recording multiple events per week. Note: if the AI HAT+ occupies the PCIe M.2 slot, an NVMe SSD would need a USB 3.0 enclosure instead.
+- **USB-C UPS / power bank** — eliminates the only hardware single point of failure. ~£20. High priority before any production use.
+- **Small OLED display** (SSD1306 via I2C) — recording state without needing a browser.
+- **Physical start/stop button** — GPIO button for hosts who don't want to touch a laptop mid-session.
+- **Multi-mic USB hub** — one lavalier per speaker for better diarisation.
+
+## Software ideas (future, post-roadmap)
+
+- **Bluetooth interaction component (J8+)** — BLE advertising + GATT server; attendee polls and feedback via ApresMeet PWA; presence detection. Fits the component model cleanly when ready.
+- **Slide capture** — detect presentation slides in the video stream, timestamp them alongside transcript segments. Enriches the MeetPaper report with visual context.
+- **Face-to-voice matching** — link speaker faces (video) to speaker labels (Whisper/Scribe diarisation). Improves speaker identification beyond audio alone.
+- **WAV chunk re-submission** — after reconnect, re-submit offline WAV chunks to ElevenLabs for higher-quality transcription of the offline window. Complements the cloud upgrade path.
+- **Highlight reel** — splice top insight-marked timestamps from the WAV buffer into a shareable audio clip. Pi prepares the raw material; CoCo selects and edits.
+- **Station rental model** — ApresMeet provides pre-configured Pi units for a per-event fee. Registered to the organiser's account, locks to their VI subscription.
+- **Privacy-first positioning** — "Audio and video never leave the room until you decide." Corporate and sensitive events will pay for this. The admin choice point (keep local Whisper or upgrade to ElevenLabs) makes the privacy guarantee tangible.

@@ -122,6 +122,7 @@ src/
 
   report/
     ReportGenerator.ts          builds report JSON on stop; summariseWithLLM() hook (disabled)
+    reportHtml.ts               renders the styled MeetPaper HTML report page from report JSON
 
   public/
     index.html                  MeetPaper-styled dashboard
@@ -130,6 +131,9 @@ src/
 
 fixtures/
   mock-panel-transcript.txt     scripted panel lines for the demo
+
+(reference, already in repo — do not rebuild)
+  devops/design/meetpaper_station_concept.html   visual reference for the dashboard + report
 
 test/
   stateMachine.test.ts
@@ -415,7 +419,12 @@ export interface HardwareController {
 
 ## 14. Report — `report/`
 
-On `POST /stop`, after the queue flush attempt, write `data/reports/<session_id>.json` and serve it at `GET /report/:sessionId`:
+On `POST /stop`, after the queue flush attempt, write `data/reports/<session_id>.json` and serve it. Provide **two** representations at `GET /report/:sessionId`:
+
+- **JSON** when the request `Accept`s `application/json` (or `?format=json`) — the machine shape below.
+- **A styled HTML page** by default (browser navigation) — the demo's closing beat. Same MeetPaper identity as the dashboard (masthead, tokens, fonts): a title block with session name + duration, a **health summary row** (audio gaps `0`, segments, network interruptions, queued remaining `0`), the **full transcript** rendered editorially (speaker labels, readable line length — this is the “gapless” proof), and the **insight marks** called out as pull-quotes with their ±30s window. It should look like a MeetPaper article, because that is exactly what Voice Intelligence ultimately produces. Render it server-side from the report JSON (a small template function is fine — no framework).
+
+JSON shape:
 
 ```json
 { "session_id":"...","title":"...","started_at":"...","stopped_at":"...","duration_ms":3600000,
@@ -431,33 +440,47 @@ Include transcript text inside each insight mark's window where available. Add a
 
 ---
 
-## 15. Dashboard — `public/` (MeetPaper editorial identity)
+## 15. Dashboard — `public/` (MeetPaper editorial identity) — THE SURFACE JUDGES SEE
 
-Vanilla HTML/CSS/JS, no framework. Poll `/status`, `/events`, `/transcript` every 1–2s. Use the **real MeetPaper design tokens** (these match `apm/css/meetpaper.css` — use them precisely):
+**This is the most visible artefact in the build. Treat it as a designed object, not a debug panel.** At a hackathon the dashboard *is* the demo — nobody reads the TypeScript; they watch this screen. Spend real care here.
+
+### Visual reference — match it, don't reinvent it
+
+There is a concept paper in this repo at **`devops/design/meetpaper_station_concept.html`** (and the full original at `../apm/devops/design/meetpaper_station.html` if reachable). **Open it, read its `<style>` block, and reuse its exact design language** — the same tokens, type scale, masthead treatment, dark section-nav bar, pulsing teal LED, dashed-rule dividers, and the cream surface floating on a warm neutral stage. The dashboard is a live control surface rather than an editorial page, but it must look like it belongs to the same product. When in doubt about a spacing, weight, or colour choice, copy what the concept paper does.
+
+### Tokens (exact — these match `apm/css/meetpaper.css`)
 
 ```
---mp-paper:  #F3ECD9    --mp-paper-2: #ECE3CC
---mp-ink:    #1A1815    --mp-ink-3:   #6B645B
---mp-accent: #7A1F2B    (burgundy — recording/critical)
---mp-teal:   #00C49A    (delivery healthy / synced)
---mp-gold:   #B98A2C    --amber demo: #F5A623 (offline buffering)
+--mp-paper:  #F3ECD9   --mp-paper-2: #ECE3CC   (surfaces)
+--mp-ink:    #1A1815   --mp-ink-3:   #6B645B   (text)
+--mp-accent: #7A1F2B   (burgundy — recording / critical)
+--mp-teal:   #00C49A   (delivery healthy / synced / live LED)
+--mp-gold:   #B98A2C
+--mp-amber:  #F5A623   (OFFLINE_BUFFERING — the alarm colour)
+--mp-stage:  #C8C1B5   (page background behind the paper surface)
 ```
-Fonts: **DM Serif Display** (masthead + headings), **Source Serif 4** (body, italic for straplines), **Inter** (UI labels, uppercase tracking), **JetBrains Mono** (code/metrics). Load from Google Fonts.
+Define these as CSS custom properties at `:root` for the dashboard — **except the masthead logo colours, which must be hardcoded per-span** (`Meet` in `#1A1815`, `Paper` in `#7A1F2B`); CSS variables on the logo broke during the concept-paper build. Fonts from Google Fonts: **DM Serif Display** (masthead + section headings), **Source Serif 4** (body + italic straplines), **Inter** (UI labels — uppercase, letter-spaced ~0.16em), **JetBrains Mono** (all metrics and code).
 
-Layout, top to bottom:
-- **Masthead:** `MeetPaper` in DM Serif Display (108px, "Paper" in `--mp-accent`), strapline *"The room keeps recording. Even when the internet doesn't."* in Source Serif italic. A live LED dot (teal, pulsing) next to a `STATION` badge.
-- **Status strip:** state · recording timer · session id/code · mic source · STT provider + connection · relay connection · **queue depth** · WAV chunks · **seconds safe** · last error. Each is a small Inter label over a JetBrains Mono value.
-- **Controls:** Pair · Start · Pause · Resume · Stop · Mark Insight · **Simulate network drop** · **Reconnect network**. Buttons styled like the MeetPaper black section-nav.
-- **Live transcript panel:** committed segments in order, with speaker labels; partial line shown faintly if present.
-- **Health log panel:** recent `session_events` — offline/online changes, queue flush events, marks.
-- **Report panel:** after stop, a link to the local report.
+### Layout, top to bottom
 
-State banners (large, unmissable — this is what the judges read):
-- Recording: a clear *"Recording in progress. Audio is captured locally on this Station."* notice.
-- Offline: **`OFFLINE — AUDIO SAFE`** on `--amber` — *"Segments queued locally. Recording continues."*
-- Syncing: **`SYNCING`** on `--mp-teal` — *"Queued segments delivering in timestamp order."*
+- **Live strip** (dark `--mp-ink` bar, full width): a burgundy `RECORDING`/`OFFLINE`/`READY` pill on the left with a blinking dot, then a scrolling/static status line — session title, code, elapsed. Mirrors the concept paper's `.st-strip`.
+- **Masthead:** `MeetPaper` in DM Serif Display (~64–88px on screen; smaller than the paper's 116px but same proportion), `Meet` in ink, `Paper` in burgundy. Strapline *“The room keeps recording. Even when the internet doesn’t.”* in Source Serif italic. A pulsing teal LED dot beside a `STATION` badge, exactly like the paper.
+- **Status strip** (the instrument cluster): a horizontal row of labelled metrics, each a small uppercase Inter label above a JetBrains Mono value: **STATE · TIMER · SESSION · MIC · STT · RELAY · QUEUE · CHUNKS · SECONDS SAFE · LAST ERROR**. The STATE value is colour-coded to the state (red recording, amber offline, teal synced). QUEUE and SECONDS SAFE are the two numbers the audience watches move — make them slightly larger.
+- **Controls** (styled like the concept paper's black section-nav, uppercase Inter): `Pair` · `Start` · `Pause` · `Resume` · `Stop` · `Mark Insight` · then a visually separated pair of *demo* buttons `Simulate network drop` and `Reconnect network` (give these two a distinct treatment — outlined, slightly set apart — so the presenter can find them instantly under pressure).
+- **Live transcript panel:** committed segments in order, each with speaker label (Source Serif, speaker label in small-caps Inter), newest at the bottom, auto-scroll. A faint partial line at the bottom if one is present.
+- **Health log panel:** recent `session_events`, monospace, newest first — offline/online changes, queue flushes, marks.
+- **Report panel:** after stop, a prominent link/button to the report (see §14 styled report).
 
-The amber offline banner is the emotional peak of the demo. Make it bold and instant.
+### State banners — the emotional beats (make them unmissable)
+
+A single large banner region below the masthead changes with state. This is what the audience reads from across a room:
+
+- **RECORDING** — calm: a thin burgundy rule + small notice *“Recording in progress. Audio is captured locally on this Station.”*
+- **OFFLINE_BUFFERING** — **the peak.** Full-width banner in `--mp-amber`, large DM Serif: **`OFFLINE — AUDIO SAFE`**, subline *“Segments queued locally. Recording continues.”* plus the live queue count. It must appear *instantly* on the simulate-drop click and feel like an alarm that is nonetheless reassuring. Consider a subtle pulse.
+- **SYNCING** — full-width banner in `--mp-teal`: **`SYNCING`**, subline *“Queued segments delivering in timestamp order — N remaining”* counting down to zero.
+- **REPORT_READY** — teal-solid confirmation with the report link.
+
+Vanilla JS only, no framework. Poll `/status`, `/events`, `/transcript` every 1–2s and diff into the DOM (don’t blow away the transcript on each poll). Keep `ELEVENLABS_API_KEY` and all secrets server-side — never reference them in `app.js`.
 
 ---
 

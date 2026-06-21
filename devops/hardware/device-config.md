@@ -9,38 +9,72 @@
 | Field | Value |
 |---|---|
 | Mic model | Mini USB Microphone M-305 |
-| Connection | USB-A |
+| Connection | USB-A (any port) |
 | Driver | USB class-compliant (no install needed) |
-| Confirmed device string | *(run `arecord -l` on Pi and fill in)* |
-| arecord command | `arecord --device=plughw:1,0 --format=S16_LE --rate=16000 --channels=1 --file-type=raw -` |
+| **Confirmed device string** | **`plughw:2,0`** |
+| arecord command | `arecord --device=plughw:2,0 --format=S16_LE --rate=16000 --channels=1 --file-type=raw -` |
+| Confirmed | 2026-06-21 — `arecord -l` shows `card 2: Device [USB PnP Sound Device], device 0: USB Audio [USB Audio]` |
 
-**To confirm device string on Pi:**
-```bash
-arecord -l
-# Look for: card N: ... [USB Audio Device] ...
-# Device string is: plughw:N,0
-```
+**Note:** card index may change if USB devices are re-plugged in a different order. Always verify with `arecord -l` if audio capture fails.
 
 ---
 
-## Pi OS setup checklist
+## Pi OS
 
-- [ ] Pi OS 64-bit installed (Bookworm recommended)
-- [ ] SSH enabled
-- [ ] Hostname set to `pi-station` (`sudo hostnamectl set-hostname pi-station`)
-- [ ] Node.js 22 installed via fnm
-- [ ] `alsa-utils` installed (`sudo apt install -y alsa-utils`)
-- [ ] `pm2` installed globally (`npm install -g pm2`)
-- [ ] `pm2 startup` hook configured
-- [ ] `.env` created at `~/pi-station/.env` with real credentials
+| Field | Value |
+|---|---|
+| OS | Debian GNU/Linux 13 (trixie) — Raspberry Pi OS 64-bit |
+| Kernel | 6.18.34+rpt-rpi-2712 |
+| Hostname | `pistation` (mDNS: `pistation.local`) |
+| Username | `pistation` |
+| SSH | Key-based auth, key at `~/.ssh/pi_station_key` on Mac |
+
+---
+
+## Node.js & runtime
+
+| Field | Value |
+|---|---|
+| Node version | v22.23.0 (installed via fnm) |
+| fnm path | `~/.local/share/fnm` |
+| pm2 | Installed globally, auto-start via systemd (`pm2-pistation.service`) |
+| App dir | `/home/pistation/pi-station/` |
+| Data dir | `/home/pistation/pi-station/data/` |
+
+---
+
+## faster-whisper
+
+| Field | Value |
+|---|---|
+| venv | `/home/pistation/pi-station/venv-whisper` |
+| Model | `base.en` (~145MB, downloaded to `~/.cache/huggingface`) |
+| Script | `scripts/transcribe.py` |
+| Confirmed | 2026-06-21 — returns `{"segments":[], "language":"en"}` on silence |
 
 ---
 
 ## Network
 
-The Pi should be reachable on the local network at `pi-station.local` via mDNS (avahi-daemon is installed by default on Pi OS). From Mac: `ping pi-station.local` to verify.
+| Field | Value |
+|---|---|
+| Hostname | `pistation.local` |
+| Current network | iPhone personal hotspot (SSID: `2703369`) |
+| SSH config | `~/.ssh/config` on Mac has `Host pistation.local` entry |
 
-If mDNS is not resolving, use the Pi's IP address directly. Find it with: `hostname -I` on the Pi.
+---
+
+## Pi OS setup checklist (confirmed 2026-06-21)
+
+- [x] Pi OS 64-bit (Debian trixie) installed via Raspberry Pi Imager
+- [x] SSH enabled (cloud-init, key-based auth set up)
+- [x] Hostname: `pistation`
+- [x] Node.js 22 installed via fnm
+- [x] `sqlite3`, `libsqlite3-dev`, `python3-venv` installed
+- [x] `pm2` installed globally, startup hook configured (`pm2-pistation.service`)
+- [x] `.env` created at `/home/pistation/pi-station/.env`
+- [x] faster-whisper installed in `venv-whisper`, `base.en` model downloaded
+- [x] App deployed, running, WAV chunks writing (`chunk-000001.wav` = 251KB for 8s session)
 
 ---
 
@@ -52,12 +86,12 @@ If mDNS is not resolving, use the Pi's IP address directly. Find it with: `hostn
 
 ---
 
-## Bill of materials (hackathon kit)
+## Bill of materials
 
 | Item | Notes |
 |---|---|
-| Raspberry Pi 5 (4GB) | × 2 units (one in box, one bare board) |
-| Mini USB Mic M-305 | × 1 unit |
-| MicroSD card | × 1 unit (capacity unknown) |
+| Raspberry Pi 5 (4GB) | × 2 units |
+| Mini USB Mic M-305 | × 1 unit — USB 2.0, class-compliant, 100Hz–8kHz |
+| MicroSD card | × 1 unit |
 | USB-C cable | For power |
 | No USB-C power bank | Single point of failure — to acquire |

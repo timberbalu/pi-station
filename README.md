@@ -1,65 +1,91 @@
-# MeetPaper Station
+# Pi-Station
 
-> Local audio ingestion server for MeetPaper Voice Intelligence.
+Pi-Station is an edge platform for Raspberry Pi hardware. **MeetStation** is the first app running on it.
 
-The room keeps recording. Even when the internet doesn't.
+> The room keeps recording. Even when the internet doesn't.
 
-## What it does
+## Platform structure
 
-Three Node.js/TypeScript services running on a Raspberry Pi 5:
+```text
+pi-station/
+├── shared/              PiApp contract and shared platform types
+├── core/                config, logger, DB, state, GPIO-safe hardware control
+├── hardware/            future pan/tilt, camera, and device stubs
+└── apps/
+    └── meet-station/    MeetPaper voice capture app
+```
 
-| Service | File | Job |
-|---|---|---|
-| `pi-capture` | `src/capture.ts` | Opens USB mic, streams PCM to ElevenLabs Scribe v2 WS, writes rolling WAV buffer to disk |
-| `pi-relay` | `src/relay.ts` | POSTs committed transcript segments to `voice.apresmeet.com`; queues locally in SQLite when offline, flushes on reconnect |
-| `pi-control` | `src/control.ts` | Fastify HTTP API on LAN — `POST /start /stop /pause /resume`, `GET /status` |
+MeetStation is the current audio-ingestion app for MeetPaper Voice Intelligence. Future Pi apps should implement the shared `PiApp` contract and live under `apps/<name>/`.
 
-## Quick start (dev)
+## Quick start
 
 ```bash
 cp .env.example .env
-# fill in ELEVENLABS_API_KEY and VI_SESSION_TOKEN
 npm install
 npm run dev
 ```
 
-The control API starts on `http://localhost:3456`. With no `VI_INGEST_URL` set, segments are logged to console rather than sent — safe for local testing.
+Open [http://localhost:3456](http://localhost:3456).
 
-## Deploy to Pi
+Mock mode is still the default. It does not need:
+
+- a microphone
+- a Raspberry Pi
+- ElevenLabs credentials
+- a real cloud ingest endpoint
+
+## What MeetStation does
+
+- captures audio server-side
+- writes rolling WAV chunks locally
+- emits mock or realtime transcript segments
+- queues relay delivery in SQLite when offline
+- serves a local dashboard and report
+
+## Workspace commands
+
+- `npm run dev` runs `apps/meet-station`
+- `npm run typecheck` checks all workspaces
+- `npm test` runs the MeetStation Vitest suite
+- `npm run build` builds the workspace graph with TypeScript project references
+
+## Pi deployment
+
+Read [docs/PI_SETUP.md](docs/PI_SETUP.md) first.
+
+Typical flow:
 
 ```bash
-# First time — set up the Pi hostname
-ssh pi@raspberrypi.local
-sudo apt install -y nodejs npm alsa-utils
-npm install -g tsx pm2
-sudo hostname pi-station   # optional: set mDNS name
-
-# Every deploy from your Mac
-./scripts/deploy-pi.sh pi-station.local
+npm install
+npm run build
+./scripts/deploy-pi.sh
 ```
 
-Check status: `http://pi-station.local:3456/status`
+The deploy script syncs the repo, installs production dependencies on the Pi, rebuilds there, and starts `apps/meet-station/dist/index.js` under `pm2`.
 
-## API
+## Environment
 
-| Method | Path | Body | Response |
-|---|---|---|---|
-| `POST` | `/start` | — | `{ ok, state }` |
-| `POST` | `/stop` | — | `{ ok, state }` |
-| `POST` | `/pause` | — | `{ ok, state }` |
-| `POST` | `/resume` | — | `{ ok, state }` |
-| `POST` | `/pair` | `{ session_code }` | `{ ok, session_code }` |
-| `GET` | `/status` | — | `{ state, queue_depth, recording, ws_connected, … }` |
+Important variables:
 
-## Hardware
+- `APP_ID=meet-station`
+- `AUDIO_SOURCE=mock|arecord|file`
+- `STT_PROVIDER=mock|elevenlabs`
+- `VOICE_INGEST_URL=http://localhost:3456/mock/ingest`
+- `PAIRING_MODE=local|remote`
+- `ENABLE_GPIO=false`
 
-- Raspberry Pi 5 (4GB or 8GB)
-- Mini USB microphone (M-305 or any USB class-compliant mic)
-- MicroSD card (16GB+)
-- Optional: USB-C pass-through power bank for UPS resilience
+See [.env.example](.env.example) for the full set.
 
-## VS Code workspace
+## Adding a future app
 
-This project is part of the `foundry365.code-workspace` multi-root workspace.
-It shares `tsconfig.base.json` from `../f365/` but has its own `package.json`
-and is **not** an npm workspace inside `f365` — it deploys independently to the Pi.
+1. Create `apps/<app-name>/`.
+2. Implement the `PiApp` contract from [shared/src/PiApp.ts](/Users/bijumenon/Sites/pi-station/shared/src/PiApp.ts).
+3. Add the workspace to the root `package.json`.
+4. Wire its bootstrap and platform registration.
+
+## Known limitations
+
+- Remote pairing is still a TODO.
+- ElevenLabs realtime behavior still needs live Pi verification.
+- GPIO in `core/` remains safe and minimal; richer hardware work belongs in the `hardware/` workspace.
+- Pan/tilt camera and AI HAT+ support are scaffolded only.

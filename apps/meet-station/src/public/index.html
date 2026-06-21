@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MeetPaper Station</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500&family=Source+Serif+4:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="badge"><span class="badge-dot"></span>Station</p>
+          <h1>Meet<span>Paper</span></h1>
+          <p class="strapline">The room keeps recording. Even when the internet doesn't.</p>
+        </div>
+      </header>
+
+      <section id="banner" class="banner banner-recording" hidden>
+        <strong id="banner-title"></strong>
+        <span id="banner-copy"></span>
+      </section>
+
+      <section class="status-grid" id="status-grid"></section>
+
+      <section class="controls">
+        <div class="pairing">
+          <input id="session-code" type="text" value="482913" placeholder="Session code" />
+          <input id="session-title" type="text" value="Founder Fundraising Panel" placeholder="Session title" />
+          <button data-action="pair">Pair</button>
+        </div>
+        <div class="button-row">
+          <button data-action="start">Start</button>
+          <button data-action="pause">Pause</button>
+          <button data-action="resume">Resume</button>
+          <button data-action="stop">Stop</button>
+          <button data-action="mark">Mark Insight</button>
+          <button data-action="network-down">Simulate network drop</button>
+          <button data-action="network-up">Reconnect network</button>
+          <button data-action="stt-drop">Simulate STT drop</button>
+          <button data-action="stt-up">Reconnect STT</button>
+        </div>
+      </section>
+
+      <section class="panels">
+        <article class="panel">
+          <h2>Live Transcript</h2>
+          <p id="partial" class="partial"></p>
+          <div id="transcript" class="transcript"></div>
+        </article>
+        <article class="panel">
+          <h2>Health Log</h2>
+          <div id="events" class="events"></div>
+        </article>
+        <article class="panel">
+          <h2>Report</h2>
+          <p id="report-link" class="report-link">No report generated yet.</p>
+          <div id="ingest" class="ingest"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

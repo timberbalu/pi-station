@@ -1,0 +1,16 @@
+[Unit]
+Description=MeetPaper Station
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/meetpaper-station
+EnvironmentFile=/opt/meetpaper-station/.env
+ExecStart=/usr/bin/node /opt/meetpaper-station/dist/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

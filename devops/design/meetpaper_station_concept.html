@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MeetPaper Station — Concept Paper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   NOTE: This is the MeetPaper Station CONCEPT PAPER, copied into pi-station as
+   the authoritative VISUAL REFERENCE for the live dashboard (src/public/).
+   The dashboard is a different artefact (live control surface) but must reuse
+   this exact palette, type system, masthead treatment, and component styling.
+   RESETS & PAGE SHELL
+───────────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, body.page-meetpaper {
+  background: #C8C1B5;
+  min-height: 100vh;
+}
+
+.mp-stage {
+  background: #C8C1B5 !important;
+  padding: 32px 20px 80px !important;
+  display: flex !important;
+  justify-content: center !important;
+  min-height: auto !important;
+}
+
+.mp-paper {
+  width: 100%;
+  max-width: 1200px !important;
+  background: #F3ECD9 !important;
+  background-image: none !important;
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.6) inset,
+    0 24px 60px -12px rgba(0,0,0,0.28),
+    0 6px 16px -4px rgba(0,0,0,0.18) !important;
+}
+.mp-paper::before { display: none !important; }
+.mp-paper > * { position: relative; z-index: 1; }
+
+/* LIVE STRIP */
+.st-strip { display: flex; align-items: stretch; background: #1A1815; height: 34px; overflow: hidden; }
+.st-strip-pill {
+  display: flex; align-items: center; gap: 7px;
+  background: #7A1F2B; color: #fff; padding: 0 16px; flex-shrink: 0;
+  font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.st-strip-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: blink 1.6s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.st-strip-text {
+  flex: 1; display: flex; align-items: center; padding: 0 20px;
+  font-family: 'Inter', sans-serif; font-size: 11.5px;
+  color: rgba(255,255,255,0.55); white-space: nowrap; overflow: hidden;
+}
+.st-strip-text b { color: #fff; font-weight: 600; }
+
+/* META ROW */
+.st-meta {
+  display: flex; align-items: center; justify-content: space-between; padding: 11px 36px;
+  font-family: 'Inter', sans-serif; font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.10em; text-transform: uppercase; color: #6B645B;
+  border-bottom: 0.5px solid rgba(43,40,35,0.16);
+}
+.st-meta-centre {
+  font-family: 'Source Serif 4', serif; font-style: italic;
+  font-size: 12px; letter-spacing: 0.02em; text-transform: none; color: #3A3530;
+}
+
+/* MASTHEAD */
+.st-mast { display: grid; grid-template-columns: 220px 1fr 220px; align-items: end; padding: 18px 36px 14px; gap: 20px; }
+.st-mast-col-label { font-family: 'Inter', sans-serif; font-size: 9px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #6B645B; margin-bottom: 5px; }
+.st-mast-col-value { font-family: 'Source Serif 4', serif; font-style: italic; font-size: 21px; line-height: 1.15; color: #1A1815; letter-spacing: -0.005em; }
+.st-mast-col-sub { font-family: 'Inter', sans-serif; font-size: 11px; color: #6B645B; margin-top: 2px; }
+.st-mast-centre { text-align: center; }
+.st-mast-tagline { font-family: 'Inter', sans-serif; font-size: 9px; letter-spacing: 0.30em; text-transform: uppercase; color: #6B645B; margin-bottom: 8px; }
+/* THE LOGO — explicit colour on each span (NOT CSS variables — they broke on file://) */
+.st-logo { font-family: 'DM Serif Display', serif; font-size: 116px; line-height: 0.88; letter-spacing: -0.035em; display: block; }
+.st-logo-meet  { color: #1A1815; }
+.st-logo-paper { color: #7A1F2B; }
+.st-mast-strap { margin-top: 12px; font-family: 'Source Serif 4', serif; font-style: italic; font-size: 14px; color: #6B645B; letter-spacing: 0.01em; }
+.st-mast-right { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 10px; }
+.st-badge { display: inline-flex; align-items: center; gap: 6px; font-family: 'Inter', sans-serif; font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; padding: 4px 10px; background: #7A1F2B; color: #fff; }
+.st-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: blink 2s ease-in-out infinite; }
+.st-mast-right-label { font-family: 'Inter', sans-serif; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #6B645B; }
+.st-mast-right-name { font-family: 'Source Serif 4', serif; font-style: italic; font-size: 17px; color: #1A1815; }
+
+/* HEAD RULE + SECTION NAV */
+.st-head-rule { border-top: 2.5px solid #1A1815; border-bottom: 0.5px solid #1A1815; height: 4px; margin: 0 36px; }
+.st-sec-nav { display: flex; align-items: stretch; background: #1A1815; margin: 0 36px; }
+.st-sec-nav a {
+  font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: rgba(255,255,255,0.50); padding: 13px 20px; border-right: 0.5px solid rgba(255,255,255,0.08);
+  text-decoration: none; transition: color 0.15s; display: flex; align-items: center; gap: 7px; position: relative;
+}
+.st-sec-nav a:hover { color: rgba(255,255,255,0.85); }
+.st-sec-nav a.active { color: #fff; }
+.st-sec-nav a.active::after { content: ""; position: absolute; bottom: 0; left: 20px; right: 20px; height: 2px; background: #7A1F2B; }
+.st-sec-nav-spacer { flex: 1; }
+.st-sec-nav-right { display: flex; align-items: center; padding: 0 18px; font-family: 'Inter', sans-serif; font-size: 10px; color: rgba(255,255,255,0.25); letter-spacing: 0.08em; border-left: 0.5px solid rgba(255,255,255,0.08); }
+
+/* CONCEPT LEAD */
+.st-lead { padding: 36px 36px 28px; border-bottom: 0.5px solid rgba(43,40,35,0.16); }
+.st-eyebrow { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.20em; text-transform: uppercase; color: #6B645B; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.st-led { width: 7px; height: 7px; border-radius: 50%; background: #00C49A; animation: led-pulse 2.4s ease-in-out infinite; }
+@keyframes led-pulse { 0% { box-shadow: 0 0 0 0 rgba(0,196,154,0.6); } 60% { box-shadow: 0 0 0 8px rgba(0,196,154,0); } 100% { box-shadow: 0 0 0 0 rgba(0,196,154,0); } }
+.st-lead h1 { font-family: 'DM Serif Display', serif; font-size: clamp(40px, 4.8vw, 62px); line-height: 1.0; letter-spacing: -0.02em; color: #1A1815; margin-bottom: 16px; }
+.st-lead h1 em { color: #7A1F2B; font-style: italic; }
+.st-lead-dek { font-family: 'Source Serif 4', serif; font-size: 17px; font-style: italic; line-height: 1.65; color: #3A3530; max-width: 600px; margin-bottom: 22px; }
+.st-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.st-chip { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 11px; border: 0.5px solid rgba(43,40,35,0.20); color: #6B645B; }
+.st-chip.teal   { border-color: #00C49A; color: #00C49A; background: rgba(0,196,154,0.07); }
+.st-chip.accent { border-color: #7A1F2B; color: #7A1F2B; background: rgba(122,31,43,0.06); }
+
+/* The full concept-paper body styling continues in the original at
+   apm/devops/design/meetpaper_station.html. The tokens, fonts, masthead,
+   nav bar, LED, and chip treatments above are the core reference for the
+   dashboard. Build the dashboard to feel like part of this same product. */
+</style>
+</head>
+<body class="page-meetpaper">
+<div class="mp-stage">
+<div class="mp-paper">
+
+  <div class="st-strip">
+    <div class="st-strip-pill"><span class="st-strip-dot"></span>Concept</div>
+    <div class="st-strip-text">MeetPaper Station &nbsp;·&nbsp; <b>Local ingestion server for Voice Intelligence</b> &nbsp;·&nbsp; Raspberry Pi 5 &nbsp;·&nbsp; Node.js · TypeScript &nbsp;·&nbsp; June 2026</div>
+  </div>
+
+  <div class="st-meta">
+    <span>ApresMeet &nbsp;·&nbsp; Voice Intelligence</span>
+    <span class="st-meta-centre">The room keeps recording.</span>
+    <span>Concept Paper &nbsp;·&nbsp; June 2026</span>
+  </div>
+
+  <div class="st-mast">
+    <div>
+      <div class="st-mast-col-label">Concept</div>
+      <div class="st-mast-col-value">Hardware Layer</div>
+      <div class="st-mast-col-sub">Voice Intelligence · Physical capture</div>
+    </div>
+    <div class="st-mast-centre">
+      <div class="st-mast-tagline">ApresMeet · Voice Intelligence</div>
+      <span class="st-logo"><span class="st-logo-meet">Meet</span><span class="st-logo-paper">Paper</span></span>
+      <div class="st-mast-strap">The editorial layer for professional events</div>
+    </div>
+    <div class="st-mast-right">
+      <div class="st-badge"><span class="st-badge-dot"></span> Station</div>
+      <div class="st-mast-right-label">Prepared by</div>
+      <div class="st-mast-right-name">Foundry365</div>
+    </div>
+  </div>
+
+  <div class="st-head-rule"></div>
+
+  <nav class="st-sec-nav">
+    <a href="#" class="active">What is it</a>
+    <a href="#">Architecture</a>
+    <a href="#">How it works</a>
+    <a href="#">Resilience</a>
+    <span class="st-sec-nav-spacer"></span>
+    <span class="st-sec-nav-right">Pi 5 · Node.js · TypeScript</span>
+  </nav>
+
+  <div class="st-lead">
+    <div class="st-eyebrow"><span class="st-led"></span>MeetPaper · Voice Intelligence Hardware</div>
+    <h1>The room keeps recording.<br><em>Even when the internet doesn't.</em></h1>
+    <p class="st-lead-dek">This file is the visual reference for the live dashboard. The full concept paper lives at apm/devops/design/meetpaper_station.html — match this design language when building src/public/.</p>
+    <div class="st-chips">
+      <span class="st-chip teal">Always-on capture</span>
+      <span class="st-chip">Local audio buffer</span>
+      <span class="st-chip">Segment retry queue</span>
+      <span class="st-chip accent">Raspberry Pi 5</span>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

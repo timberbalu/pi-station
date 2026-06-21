@@ -1,0 +1,241 @@
+:root {
+  --mp-paper: #F3ECD9;
+  --mp-paper-2: #ECE3CC;
+  --mp-ink: #1A1815;
+  --mp-ink-3: #6B645B;
+  --mp-accent: #7A1F2B;
+  --mp-teal: #00C49A;
+  --mp-gold: #B98A2C;
+  --mp-amber: #F5A623;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(122, 31, 43, 0.12), transparent 38%),
+    linear-gradient(145deg, var(--mp-paper), var(--mp-paper-2));
+  color: var(--mp-ink);
+  font-family: "Inter", sans-serif;
+}
+
+.shell {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 48px 24px 64px;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-family: "DM Serif Display", serif;
+  font-size: clamp(3.5rem, 12vw, 6.75rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+}
+
+.masthead h1 span {
+  color: var(--mp-accent);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 8px 14px;
+  border: 1px solid rgba(26, 24, 21, 0.15);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.badge-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--mp-teal);
+  box-shadow: 0 0 0 0 rgba(0, 196, 154, 0.45);
+  animation: pulse 1.6s infinite;
+}
+
+.strapline {
+  margin: 18px 0 0;
+  font-family: "Source Serif 4", serif;
+  font-style: italic;
+  font-size: 1.3rem;
+  color: var(--mp-ink-3);
+}
+
+.banner {
+  margin: 32px 0;
+  padding: 18px 20px;
+  border-radius: 18px;
+  font-weight: 700;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.banner-recording {
+  background: rgba(122, 31, 43, 0.12);
+  color: var(--mp-accent);
+}
+
+.banner-offline {
+  background: rgba(245, 166, 35, 0.22);
+  color: #5f3f00;
+}
+
+.banner-syncing {
+  background: rgba(0, 196, 154, 0.18);
+  color: #005845;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.status-card,
+.panel,
+.controls {
+  border: 1px solid rgba(26, 24, 21, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 40px rgba(26, 24, 21, 0.06);
+}
+
+.status-card {
+  padding: 18px;
+}
+
+.status-card label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--mp-ink-3);
+}
+
+.status-card strong {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.05rem;
+}
+
+.controls {
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.pairing,
+.button-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pairing {
+  margin-bottom: 14px;
+}
+
+input,
+button {
+  border-radius: 999px;
+  border: 1px solid rgba(26, 24, 21, 0.14);
+  background: rgba(255, 255, 255, 0.88);
+  font: inherit;
+}
+
+input {
+  min-width: 220px;
+  padding: 12px 16px;
+}
+
+button {
+  padding: 12px 18px;
+  background: var(--mp-ink);
+  color: var(--mp-paper);
+  cursor: pointer;
+}
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.panel {
+  padding: 22px;
+}
+
+.panel h2 {
+  margin-top: 0;
+  font-family: "DM Serif Display", serif;
+  font-size: 2rem;
+}
+
+.transcript,
+.events,
+.ingest {
+  display: grid;
+  gap: 14px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.transcript-entry,
+.event-entry,
+.ingest-entry {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(26, 24, 21, 0.08);
+}
+
+.transcript-entry strong,
+.event-entry strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.partial {
+  margin-top: 0;
+  color: var(--mp-ink-3);
+  font-family: "Source Serif 4", serif;
+  font-style: italic;
+}
+
+.report-link a {
+  color: var(--mp-accent);
+  font-weight: 700;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(0, 196, 154, 0.45); }
+  70% { box-shadow: 0 0 0 12px rgba(0, 196, 154, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 196, 154, 0); }
+}
+
+@media (max-width: 768px) {
+  .shell {
+    padding: 28px 16px 48px;
+  }
+
+  .pairing,
+  .button-row {
+    flex-direction: column;
+  }
+
+  input,
+  button {
+    width: 100%;
+  }
+}
