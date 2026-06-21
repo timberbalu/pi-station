@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-06-21 — J4 apm ingest receiver (cross-repo: apm)
+
+- **Start:** 2026-06-21 13:01 BST
+- **End:** 2026-06-21 BST
+- **Model/provider:** Claude Opus (Cursor)
+- **Prompt:** `pi-station/docs/SYNC.md` (§"J4 — endpoints the apm side must implement")
+- **Repo:** **apm** (`/Users/bijumenon/Sites/apm`) — PHP 8 / MySQL / Elastic Beanstalk
+- **Outcome:** four-phase station sync receiver implemented on the apm side (manifest, presign, confirm, sync-complete) following apm conventions (`fc.php`, `ws/` endpoints, `obj/db/`, `obj/media/`, `devops/db/`)
+- **Files added (apm):** `ws/station/index.php`, `ws/station/station_lib.php`, `ws/station/README.md`, `ws/station/tests/{test_helper,test_station_sync}.php`, `obj/db/voice/VIStationSession.php`, `obj/db/voice/VIMediaAsset.php`, `obj/media/S3MultipartHandler.php`, `devops/db/vi_station_sync.sql`, `.platform/nginx/conf.d/elasticbeanstalk/station.conf`
+- **Files changed (apm):** `ec.php` (added `STATION_INGEST_KEY`)
+- **Commands run:** `php ws/station/tests/test_station_sync.php`, `php -l` on all new files (MAMP php 8.2)
+- **Test results:** 39/39 assertions passed; syntax clean on all 5 PHP source files
+- **What works (unit-level):** route parsing, bearer auth, S3-key resolution (full + bare), media-meta parsing, multipart maths, ETag quoting; manifest idempotency (409 on repeat); presign create/resume; confirm → `VI_MEDIA_ASSETS` upsert; sync-complete → `SYNC_COMPLETE=1`
+- **Needs live env to verify:** nginx subpath rewrite and real S3 multipart presign/complete (no AWS/nginx in this environment)
+
 ## 2026-06-13 — J1 full MVP build
 
 - **Start:** 2026-06-13 (Codex session; preflight run before build)

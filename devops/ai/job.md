@@ -6,6 +6,16 @@
 
 STATUS: DONE
 
+**Prompt:** `pi-station/docs/SYNC.md` (§"J4 — endpoints the apm side must implement")
+
+**Job (J4 — apm repo, not pi-station):** apm/PHP ingest receiver for the J3b sync contract — `POST /ws/station/sessions` (manifest, idempotent), `GET .../media/presign`, `POST .../media/confirm`, `POST .../sync-complete`. New `VI_STATION_SESSIONS` + `VI_MEDIA_ASSETS` tables, S3 multipart presign via `aws.phar`, nginx front-controller routing, `STATION_INGEST_KEY` auth. 39 PHP unit assertions green, `php -l` clean.
+
+**Completed:** 2026-06-21
+
+---
+
+## Previous job (J3b — complete)
+
 **Prompt:** `devops/ai/prompts/PI_STATION_J3b_sync_service.md`
 
 **Job:** Host-level four-phase SyncService (manifest → segments → media to S3 via presigned URLs → sync-complete). Resumable multipart uploads, connectivity probe, mock S3 path, dashboard SYNCING progress. 48 tests green.
@@ -70,10 +80,9 @@ J1 built the full mock-first MVP in `src/`. All tests green, build clean, mock d
 
 ### Next job
 
-- **J4 — apm ingest receiver**: manifest + segment + media (presign/confirm) + sync-complete on the PHP/apm side. Contracts + `VI_MEDIA_ASSETS` table specced in `docs/SYNC.md`.
+- **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
 
 ### Remaining queued jobs
-- **J4 — apm ingest receiver**: manifest + segment + media + sync-complete on PHP/apm side.
 - **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
 - **J6 — VideoComponent + pan/tilt**: libcamera, rolling MP4, AI HAT+ face detection, PCA9685 servo tracking.
 - **J7 — Cloud upgrade path**: admin re-submits WAV to ElevenLabs; replaces local transcript in VI.

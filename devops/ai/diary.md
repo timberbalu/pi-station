@@ -6,6 +6,126 @@
 
 ---
 
+## 2026-06-21 — J4: apm ingest receiver (complete) — *cross-repo: apm, not pi-station*
+
+**39/39 PHP unit assertions green. `php -l` clean on all new files.**
+
+J4 is the **apm/PHP** side of the J3b sync contract (apm repo at `/Users/bijumenon/Sites/apm`, PHP 8 / MySQL / Elastic Beanstalk). The Pi side shipped in J3b; this implements the four endpoints it calls.
+
+### What was built (apm)
+
+- `ws/station/index.php` — front controller: Bearer auth (`STATION_INGEST_KEY`), route parse, dispatch
+- `ws/station/station_lib.php` — pure helpers (route parse, bearer extract, S3-key resolve, media-meta parse, multipart maths, ETag quoting) — unit tested, no DB/SDK
+- `obj/db/voice/VIStationSession.php` — `VI_STATION_SESSIONS` model (manifest upsert + sync-complete). Keyed by the Pi's **string** session id, separate from the int-keyed `VI_SESSIONS` recorder flow
+- `obj/db/voice/VIMediaAsset.php` — `VI_MEDIA_ASSETS` model, idempotent upsert on `(SESSION_ID, MEDIA_TYPE, CHUNK_INDEX)`
+- `obj/media/S3MultipartHandler.php` — S3 multipart create / presign-parts / complete, via the existing `ext/aws/aws.phar` (same pattern as `S3Handler.php`)
+- `devops/db/vi_station_sync.sql` — both tables (the `VI` database)
+- `.platform/nginx/conf.d/elasticbeanstalk/station.conf` — `/ws/station/*` → front controller rewrite
+- `ec.php` — `STATION_INGEST_KEY` constant (matches the `RADAR_API_KEY` / `SIGNALS_API_KEY` pattern)
+- `ws/station/README.md` + `ws/station/tests/`
+
+### Key contract finding (important for interop)
+
+`docs/SYNC.md` shows `key=audio/chunk-0001.wav` (bare), but the **shipped Pi code** (`MediaUploader`) sends `record.s3Key` — the **full** key `vi-media/sessions/{id}/audio/chunk-0001.wav` — to both presign and confirm. The receiver treats `key` as the literal object key and **also** tolerates the bare form (prefixes it). `confirm` returns `s3_key` = the resolved key, matching the mock the Pi e2e-tested against.
+
+### Decisions
+
+- **No AWS creds on the Pi** preserved: apm presigns `UploadPart` URLs; the Pi PUTs straight to S3.
+- **Stateless multipart on apm**: the Pi holds `upload_id` + confirmed parts; apm only creates the upload, presigns remaining parts (`from_part`), and completes. No server-side multipart bookkeeping table needed.
+- **Separate `VI_STATION_SESSIONS`** rather than overloading `VI_SESSIONS` — avoids string/int id collision and leaves the browser recorder untouched.
+- ETags: the Pi strips quotes; apm re-quotes for `completeMultipartUpload`.
+
+### Not done / follow-ups
+
+- Phase 2 (transcript segments) reuses the existing voice relay path — out of J4 scope.
+- CoCo auto-process trigger on sync-complete is a stub hook (later job).
+- nginx rewrite + S3 multipart can only be fully verified on a deployed EB env (no live AWS/nginx here); logic is unit-tested and `php -l` clean.
+
+---
+
+## 2026-06-21 — J4: apm ingest receiver (complete)
+
+**39/39 PHP unit assertions pass. php -l clean. Built on apm codebase.**
+
+### What was built (in /Users/bijumenon/Sites/apm)
+
+Four endpoints under `https://voice.apresmeet.com/ws/station`:
+- `POST /sessions` — manifest (idempotent: `200 {existing:false}` new, `409 {existing:true}` repeat)
+- `GET /sessions/{id}/media/presign` — S3 multipart `upload_id` + presigned part URLs (resumable via `from_part`)
+- `POST /sessions/{id}/media/confirm` — completes multipart upload, records `VI_MEDIA_ASSETS`
+- `POST /sessions/{id}/sync-complete` — sets `SYNC_COMPLETE = 1`
+
+New files: `ws/station/index.php`, `ws/station/station_lib.php`, `obj/db/voice/VIStationSession.php`, `obj/db/voice/VIMediaAsset.php`, `obj/media/S3MultipartHandler.php`, `devops/db/vi_station_sync.sql`, `.platform/nginx/conf.d/elasticbeanstalk/station.conf`, `ws/station/README.md` + tests.
+
+Changed: `ec.php` (added `STATION_INGEST_KEY`, matching existing `RADAR_API_KEY`/`SIGNALS_API_KEY` pattern).
+
+### Key decisions
+
+- **No AWS creds on Pi preserved** — apm presigns `UploadPart` URLs; Pi PUTs straight to S3. apm’s multipart handling is stateless (Pi holds `upload_id` + confirmed parts).
+- **Contract correction:** `MediaUploader` sends the full `s3Key` (`vi-media/sessions/{id}/audio/chunk-0001.wav`) as `key`, not the bare path shown in `SYNC.md`. Receiver uses `key` literally and tolerates the bare form.
+- **Separate `VI_STATION_SESSIONS`** (string-keyed) rather than overloading int-keyed `VI_SESSIONS` recorder flow — no collision, recorder untouched.
+- **ETags re-quoted** for `completeMultipartUpload` (Pi strips quotes; apm re-adds them as S3 requires).
+
+### Verification
+
+- 39/39 PHP unit assertions pass
+- `php -l` clean on all five source files (MAMP PHP 8.2)
+- nginx rewrite + real S3 multipart not yet exercised (no live EB/AWS) — needs deployed env; logic unit-tested, deploy steps in `ws/station/README.md`
+
+### ⚠️ Security note (pre-existing, flagged by J4 build)
+
+`cc.php` and `ec.php` contain live AWS and API keys in plaintext. Pre-existing issue, not introduced by J4. **These credentials should be rotated and moved to environment variables / AWS Secrets Manager before any public sharing of the apm repo.** Treat as a priority action item.
+
+### Not yet committed
+
+apm and pi-station changes not committed. Commit both repos together to keep the cross-repo work in sync.
+
+---
+
+## 2026-06-21 — J3b: Sync Service — offline→online via S3 (complete)
+
+**48/48 tests green (+13). Typecheck clean. Build clean. Pushed to main.**
+
+### What was built
+
+**core/src/sync/:**
+- `StationSyncClient` — HTTP contract: manifest / presign / confirm / sync-complete
+- `MediaUploader` — resumable multipart. S3 `upload_id` is the resume token; confirmed parts persist in `parts_json`; re-run requests presigned URLs only for parts beyond the highest confirmed part
+- `ConnectivityProbe` — fires `online`/`offline` only on transitions (no repeat firing)
+- `SyncService` — four-phase orchestrator (replaced the J3b stub cleanly)
+- `sync_state` + `media_transfer_queue` tables + typed repositories
+
+**Four phases (each gated on previous, resumes from failed phase):**
+1. Manifest — tiny JSON to apm; idempotent (409 = existing, not an error)
+2. Segments — existing relay queue drains to depth 0 via `flushSegments()` injection
+3. Media → S3 — presign → PUT parts directly to S3 → confirm; Pi holds no AWS credentials
+4. Sync-complete — tiny JSON; sets `sync_complete = 1`; CoCo can pick up
+
+**S3 key structure confirmed:** `vi-media/sessions/{session_id}/audio/chunk-NNNN.wav`
+
+**App side:**
+- Mock station + mock S3 routes (full story runs with zero AWS, honours `/simulate/network/down`)
+- Host wiring: `stop()` syncs before report; network-up triggers a cycle; probe runs while OFFLINE_BUFFERING
+- `/status.sync` field added
+- Dashboard — "Sync to Cloud" section with per-phase and per-chunk progress
+
+**Tests (+13):** `connectivityProbe`, `syncResumable`, `manifestIdempotent`, `syncPhases`, `syncE2E` (full path through real server + mock S3)
+
+**docs/SYNC.md** — phases, resumability, mock mode, and precise J4 endpoint contracts + `VI_MEDIA_ASSETS` table for the apm side
+
+### Deliberate deviation
+
+AWS SDK deps added to `core/package.json` but not imported — the presigned-URL `fetch` PUT path needs no SDK auth on the Pi. Kept for forward S3-side work. Noted in open-issues.
+
+### Verified
+- Phase gating correct — each phase stops cycle if incomplete
+- Resumability — re-run requests only parts beyond highest confirmed part
+- `uploadMediaType` correctly marks `skipped` when no chunks exist (doesn’t block)
+- `flushSegments` injection keeps host in control of segment draining
+- Mock S3 respects `/simulate/network/down` correctly
+
+---
+
 ## 2026-06-21 — J3: Generic multi-component platform (complete)
 
 **35/35 tests green. Typecheck clean. Build clean. Pushed to main.**
