@@ -5,6 +5,17 @@
 
 ---
 
+## POST-BUILD ACTION (not optional — do this after J7)
+
+**Rotate hardcoded credentials in apm `cc.php` and `ec.php`.**
+
+- `cc.php` contains live `AWS_S3_ACCESS_KEY` + `AWS_S3_SECRET_KEY` in plaintext
+- `ec.php` contains live `ELEVENLABS_API_KEY` in plaintext
+
+Safe rotation steps documented in `devops/ai/diary.md` (J4 entry). Do this before the apm repo is ever made public or shared. Won't break live code if done correctly (create new creds first, add to EB env vars, update PHP to read from env, deploy, verify, then deactivate old creds).
+
+---
+
 ## STRATEGIC INTENT — settled 2026-06-13
 
 **The hackathon is a growth hacking technique, not a competition.** The goal is not to win prizes or use every sponsor technology. The goal is to build something that becomes a real, lasting part of ApresMeet and Foundry365. Raspberry Pi itself is the prize — getting it into the product stack is the win.

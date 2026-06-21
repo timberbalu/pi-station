@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-21 — J5 Local STT (faster-whisper)
+
+- **Start:** 2026-06-21 BST
+- **End:** 2026-06-21 BST
+- **Model/provider:** Claude Opus (Cursor)
+- **Prompt:** `devops/ai/prompts/PI_STATION_J5_local_stt.md`
+- **Repo:** pi-station
+- **Outcome:** faster-whisper wired as the post-session batch STT provider; offline transcript guarantee delivered behind the `STT_PROVIDER` interface. Mock/elevenlabs paths unchanged.
+- **Files added:** `apps/meet-station/src/capture/FasterWhisperProvider.ts`, `apps/meet-station/src/capture/SilentTranscriptProvider.ts`, `apps/meet-station/test/fasterWhisperProvider.test.ts`, `apps/meet-station/test/voiceComponentBatchSTT.test.ts`
+- **Files changed:** `core/src/config.ts`, `core/src/types.ts` (`batch_transcription` status + `BatchTranscriptionStatus`), `shared/src/PlatformConfig.ts`, `apps/meet-station/src/components/voice/VoiceComponent.ts`, `apps/meet-station/src/index.ts`, `apps/meet-station/src/MeetStationApp.ts`, `apps/meet-station/src/report/ReportGenerator.ts`, `apps/meet-station/src/public/app.js`, `.env.example`
+- **Commands run:** `npm run typecheck`, `npm test`, `npm run build`
+- **Test results:** typecheck clean; 15 files / 58 tests passed (48 prior + 10 new); build clean
+- **What works (verified locally):** batch transcription on `stopSession()` in whisper mode with injected fake subprocess; chunk→session-relative timestamp shift; graceful empty-result on spawn error / non-zero exit / timeout; segments persisted `provider='faster-whisper'`; mock + elevenlabs unaffected (batch not called); status `batch_transcription` field; report note + dashboard indicator
+- **Needs hardware to verify:** real-WAV transcription on the Pi via `venv-whisper` (deploy + `STT_PROVIDER=faster-whisper`, see job.md / diary deploy steps)
+- **Decisions:** `transcribeFile` never throws (graceful empty per §7/§8, over §3 "throws"); added `SilentTranscriptProvider` so whisper mode records audio only (prevents mock-live double transcription); batch segments persisted to `transcript_segments` but not auto-enqueued to relay (follow-up if VI delivery of the local transcript is desired)
+
 ## 2026-06-21 — J4 apm ingest receiver (cross-repo: apm)
 
 - **Start:** 2026-06-21 13:01 BST

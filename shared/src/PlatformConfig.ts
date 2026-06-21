@@ -32,6 +32,9 @@ export interface PlatformConfig {
     readonly wsUrl: string;
     readonly fasterWhisperModel: string;
     readonly fasterWhisperScript: string;
+    readonly fasterWhisperPython: string;
+    readonly fasterWhisperVenvDir: string;
+    readonly fasterWhisperTimeoutMultiplier: number;
   };
   readonly relay: {
     readonly ingestUrl: string;

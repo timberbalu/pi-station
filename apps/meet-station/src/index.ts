@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 import { config } from '@pi-station/core';
 import {
@@ -21,9 +22,11 @@ import { MeetStationApp } from './MeetStationApp.js';
 import { CaptureService } from './capture/CaptureService.js';
 import { ARecordAudioSource } from './capture/ARecordAudioSource.js';
 import { ElevenLabsRealtimeProvider } from './capture/ElevenLabsRealtimeProvider.js';
+import { FasterWhisperProvider } from './capture/FasterWhisperProvider.js';
 import { FileReplayAudioSource } from './capture/FileReplayAudioSource.js';
 import { MockAudioSource } from './capture/MockAudioSource.js';
 import { MockTranscriptProvider } from './capture/MockTranscriptProvider.js';
+import { SilentTranscriptProvider } from './capture/SilentTranscriptProvider.js';
 import { WavChunkWriter } from './capture/WavChunkWriter.js';
 import { IngestClient } from './relay/IngestClient.js';
 import { RelayService } from './relay/RelayService.js';
@@ -49,9 +52,31 @@ function createTranscriptProvider(): TranscriptProvider {
     return new ElevenLabsRealtimeProvider(config);
   }
 
+  // faster-whisper is post-session/batch — no live transcription during the session.
+  if (config.stt.provider === 'faster-whisper') {
+    return new SilentTranscriptProvider();
+  }
+
   return new MockTranscriptProvider(
     config,
     fileURLToPath(new URL('../fixtures/mock-panel-transcript.txt', import.meta.url)),
+  );
+}
+
+function resolveWhisperPython(): string {
+  if (config.stt.fasterWhisperVenvDir) {
+    return path.join(config.stt.fasterWhisperVenvDir, 'bin', 'python3');
+  }
+  return config.stt.fasterWhisperPython;
+}
+
+function createWhisperProvider(): FasterWhisperProvider {
+  return new FasterWhisperProvider(
+    config.stt.fasterWhisperScript,
+    config.stt.fasterWhisperModel,
+    resolveWhisperPython(),
+    config.stt.fasterWhisperTimeoutMultiplier,
+    logger,
   );
 }
 
@@ -80,7 +105,7 @@ const relay = new RelayService(
   { onQueueBacklog: () => undefined, onQueueDrained: () => undefined },
   logger,
 );
-const voice = new VoiceComponent(capture, relay);
+const voice = new VoiceComponent(capture, relay, createWhisperProvider());
 
 const enabledIds = parseEnabledComponents(config.hardware.enabledComponents);
 const components = buildComponentRegistry(enabledIds, voice);

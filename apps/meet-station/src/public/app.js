@@ -47,12 +47,17 @@ function renderStatus(status) {
   const minutes = String(Math.floor(timer / 60)).padStart(2, '0');
   const seconds = String(timer % 60).padStart(2, '0');
 
+  const batch = status.stt.batch_transcription;
+  const sttValue = batch && batch.available
+    ? `${status.stt.provider} / batch ${batch.status}`
+    : `${status.stt.provider} / ${status.stt.connected ? 'connected' : 'offline'}`;
+
   const cards = [
     ['State', status.state],
     ['Timer', `${minutes}:${seconds}`],
     ['Session', status.session.session_code || 'unpaired'],
     ['Mic Source', status.mic.source],
-    ['STT', `${status.stt.provider} / ${status.stt.connected ? 'connected' : 'offline'}`],
+    ['STT', sttValue],
     ['Relay', status.relay.connected ? 'healthy' : 'queued'],
     ['Queue Depth', String(status.relay.queued_segments)],
     ['WAV Chunks', String(status.buffer.audio_chunks)],
@@ -87,6 +92,11 @@ function renderStatus(status) {
     bannerEl.className = 'banner banner-recording';
     bannerTitleEl.textContent = 'Recording in progress.';
     bannerCopyEl.textContent = 'Audio is captured locally on this Station.';
+  } else if (status.state === 'STOPPING' && status.stt.batch_transcription && status.stt.batch_transcription.available) {
+    bannerEl.hidden = false;
+    bannerEl.className = 'banner banner-syncing';
+    bannerTitleEl.textContent = 'TRANSCRIBING LOCALLY';
+    bannerCopyEl.textContent = `faster-whisper (${status.stt.batch_transcription.model}) — this may take a few minutes.`;
   } else {
     bannerEl.hidden = true;
   }

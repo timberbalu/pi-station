@@ -6,6 +6,16 @@
 
 STATUS: DONE
 
+**Prompt:** `devops/ai/prompts/PI_STATION_J5_local_stt.md`
+
+**Job (J5 — pi-station):** Wire faster-whisper as the post-session batch STT provider. New `FasterWhisperProvider` (batch, injectable spawn, never throws) calls `scripts/transcribe.py` per closed WAV chunk on `stopSession()` when `STT_PROVIDER=faster-whisper`, shifts timestamps to session-relative, persists segments with `provider='faster-whisper'`. New `SilentTranscriptProvider` runs as the live provider in whisper mode so the session captures audio only (no double transcription). `/status.stt.batch_transcription`, report provider note + upgrade path, dashboard "Transcribing locally" indicator. Config: `FASTER_WHISPER_PYTHON`, `FASTER_WHISPER_VENV_DIR`, `FASTER_WHISPER_TIMEOUT_MULTIPLIER`. 58 tests green (48 prior + 10 new), typecheck + build clean. Mock/elevenlabs paths untouched.
+
+**Completed:** 2026-06-21
+
+---
+
+## Previous job (J4 — complete)
+
 **Prompt:** `pi-station/docs/SYNC.md` (§"J4 — endpoints the apm side must implement")
 
 **Job (J4 — apm repo, not pi-station):** apm/PHP ingest receiver for the J3b sync contract — `POST /ws/station/sessions` (manifest, idempotent), `GET .../media/presign`, `POST .../media/confirm`, `POST .../sync-complete`. New `VI_STATION_SESSIONS` + `VI_MEDIA_ASSETS` tables, S3 multipart presign via `aws.phar`, nginx front-controller routing, `STATION_INGEST_KEY` auth. 39 PHP unit assertions green, `php -l` clean.
@@ -80,10 +90,9 @@ J1 built the full mock-first MVP in `src/`. All tests green, build clean, mock d
 
 ### Next job
 
-- **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
+- **J6 — VideoComponent + pan/tilt**: libcamera, rolling MP4, AI HAT+ face detection, PCA9685 servo tracking. Prompt: `devops/ai/prompts/PI_STATION_J6_video_component.md`.
 
 ### Remaining queued jobs
-- **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.
 - **J6 — VideoComponent + pan/tilt**: libcamera, rolling MP4, AI HAT+ face detection, PCA9685 servo tracking.
 - **J7 — Cloud upgrade path**: admin re-submits WAV to ElevenLabs; replaces local transcript in VI.
 

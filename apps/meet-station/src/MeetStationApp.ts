@@ -329,6 +329,11 @@ export class MeetStationApp {
         last_commit_at: captureStatus?.stt.lastCommitAt ?? null,
         committed_segments: captureStatus?.stt.committedSegments ?? 0,
         current_partial: captureStatus?.stt.currentPartial ?? null,
+        batch_transcription: voice?.getBatchTranscriptionStatus() ?? {
+          available: false,
+          model: '',
+          status: 'idle',
+        },
       },
       relay: {
         ingest_url: relayStatus?.ingestUrl ?? this.config.relay.ingestUrl,

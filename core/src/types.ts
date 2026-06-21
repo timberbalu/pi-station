@@ -15,6 +15,7 @@ export type StationState = typeof stationStates[number];
 export type SessionEventLevel = 'info' | 'warn' | 'error';
 export type RelayQueueStatus = 'pending' | 'sending' | 'sent' | 'dead';
 export type AudioChunkStatus = 'open' | 'closed' | 'repaired' | 'error';
+export type BatchTranscriptionStatus = 'idle' | 'running' | 'complete' | 'error';
 
 export interface SessionRecord {
   id: string;
@@ -252,6 +253,12 @@ export interface StationStatusResponse {
     last_commit_at: string | null;
     committed_segments: number;
     current_partial: string | null;
+    /** Post-session offline transcription (faster-whisper). */
+    batch_transcription: {
+      available: boolean;
+      model: string;
+      status: BatchTranscriptionStatus;
+    };
   };
   relay: {
     ingest_url: string;

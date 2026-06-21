@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-06-21 — J5: Local STT (faster-whisper) (complete)
+
+**58 tests green (48 prior + 10 new). typecheck + build clean. Mock/elevenlabs paths untouched.**
+
+J5 wires faster-whisper in as the **post-session batch** transcript provider, delivering the offline-transcript guarantee: a usable transcript exists even if ElevenLabs was unreachable for the whole event.
+
+### What was built (pi-station)
+
+- `apps/meet-station/src/capture/FasterWhisperProvider.ts` — batch provider. `transcribeFile(wav, timeoutMs)` spawns `scripts/transcribe.py`, parses JSON; `transcribeSession(id, chunks, sessionStartMs)` runs chunks in order and shifts each segment's timestamps to session-relative (adds `chunk.startMs`). **Never throws** — spawn error / non-zero exit / timeout / bad JSON all log and yield zero segments, honouring "recording (and the session) never crashes". `spawn` is injectable for tests.
+- `apps/meet-station/src/capture/SilentTranscriptProvider.ts` — no-op live `TranscriptProvider` used when `STT_PROVIDER=faster-whisper`, so the live session captures **audio only** and the batch pass is the single transcript source (no double transcription). Reports `connected` for the status widget.
+- `VoiceComponent` — `stopSession()` now runs `runBatchTranscription()` when provider is faster-whisper: lists `closed`/`repaired` chunks, calls the provider, persists segments with `provider='faster-whisper'`, `speaker_label='SPEAKER_0'` (no diarisation in base.en), `confidence=0.9`. Exposes `getBatchTranscriptionStatus()`.
+- Status: `/status.stt.batch_transcription` = `{ available, model, status: idle|running|complete|error }`.
+- Report: when whisper produced the transcript, the note states local provider + "diarisation not available" + ElevenLabs upgrade path.
+- Dashboard: STT card shows `batch <status>`; a "TRANSCRIBING LOCALLY" banner shows while `STOPPING` in whisper mode.
+- Config: `FASTER_WHISPER_PYTHON`, `FASTER_WHISPER_VENV_DIR` (set → uses `<dir>/bin/python3`), `FASTER_WHISPER_TIMEOUT_MULTIPLIER` (per-chunk timeout = multiplier × chunk duration, floor 30s). Added to `core/config.ts`, `shared/PlatformConfig.ts`, `.env.example`.
+
+### Decisions
+
+- **`transcribeFile` never throws** — the J5 prompt §3 says "throws on script error" but §7/§8 require graceful empty-on-error. Resolved in favour of graceful: safer (session always completes) and matches the testable contract.
+- **SilentTranscriptProvider** is an addition beyond the literal prompt: without it, whisper mode would fall through to the mock live provider and fabricate live segments that the batch pass then duplicates. The silent provider is the correct production behaviour for an offline/batch STT.
+- Batch segments are **persisted to `transcript_segments`** per the prompt. They are **not** auto-enqueued to the relay queue, so SyncService phase-2 (which drains the relay queue) does not currently push the batch transcript to VI. Flagged as a follow-up (see below).
+
+### Not done / follow-ups
+
+- **Relaying the batch transcript to VI**: batch segments land in `transcript_segments` but not the relay queue. If the product wants the local whisper transcript delivered to VI automatically (vs. only on the J7 ElevenLabs upgrade), enqueue them in `runBatchTranscription` (e.g. via `relay.handleCommittedSegment`). Left out to match the J5 spec and keep tests deterministic.
+- **Pi smoke test pending**: deploy + real-WAV transcription on the Pi not yet run from this session (see deploy steps in the J5 prompt §9). `venv-whisper` + `base.en` already installed from J2.
+
+### Pi deploy (for next physical session)
+
+```
+npm run build && bash scripts/deploy-pi.sh pistation@pistation.local
+# on Pi .env: STT_PROVIDER=faster-whisper
+#             FASTER_WHISPER_VENV_DIR=/home/pistation/pi-station/venv-whisper
+# (FASTER_WHISPER_PYTHON falls back to system python3 if VENV_DIR is empty)
+pm2 restart pi-station
+# start → speak → stop → wait ~30-60s → GET /transcript
+```
+
+---
+
 ## 2026-06-21 — J4: apm ingest receiver (complete) — *cross-repo: apm, not pi-station*
 
 **39/39 PHP unit assertions green. `php -l` clean on all new files.**
