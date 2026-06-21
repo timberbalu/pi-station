@@ -24,6 +24,7 @@ import { MockTranscriptProvider } from '../src/capture/MockTranscriptProvider.js
 import { WavChunkWriter } from '../src/capture/WavChunkWriter.js';
 import { IngestClient } from '../src/relay/IngestClient.js';
 import { RelayService } from '../src/relay/RelayService.js';
+import { VoiceComponent } from '../src/components/voice/VoiceComponent.js';
 
 describe('API smoke', () => {
   it('pairs, starts, marks, simulates network, and reconnects', async () => {
@@ -61,6 +62,7 @@ describe('API smoke', () => {
       },
       logger,
     );
+    const voice = new VoiceComponent(capture, relay);
     const app = new MeetStationApp(
       config,
       db,
@@ -68,8 +70,7 @@ describe('API smoke', () => {
       bus,
       stateMachine,
       new ConsoleHardwareController(logger),
-      capture,
-      relay,
+      [voice],
       new ReportGenerator(config, repositories),
       logger,
     );

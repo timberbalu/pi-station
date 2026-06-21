@@ -4,10 +4,10 @@ import type Database from 'better-sqlite3';
 import type { Logger } from 'pino';
 
 import type { HardwareController, PlatformConfig, Repositories } from '@pi-station/core';
-import { ReportGenerator } from './report/ReportGenerator.js';
-import { RelayService } from './relay/RelayService.js';
-import { CaptureService } from './capture/CaptureService.js';
 import { StationEventBus, StationStateMachine } from '@pi-station/core';
+import { ReportGenerator } from './report/ReportGenerator.js';
+import type { StationComponent } from './components/StationComponent.js';
+import type { VoiceComponent } from './components/voice/VoiceComponent.js';
 import { nowIso } from './types.js';
 import type { IngestPayload, SessionReport, SessionSummary, StationStatusResponse } from './types.js';
 
@@ -26,10 +26,10 @@ export class MeetStationApp {
     private readonly bus: StationEventBus,
     private readonly stateMachine: StationStateMachine,
     private readonly hardware: HardwareController,
-    private readonly capture: CaptureService,
-    private readonly relay: RelayService,
+    /** Ordered list of registered components. VoiceComponent must be first for back-compat status fields. */
+    private readonly components: StationComponent[],
     private readonly reportGenerator: ReportGenerator,
-    _log: Logger,
+    private readonly log: Logger,
   ) {
     this.mockIngestAvailable = config.relay.mockIngestAvailable;
   }
@@ -37,31 +37,37 @@ export class MeetStationApp {
   async initialize(): Promise<void> {
     await this.hardware.init();
     await this.hardware.setState(this.stateMachine.getState());
-    await this.capture.prepare();
-    this.capture.onCommittedSegment(async (commit) => {
-      await this.relay.handleCommittedSegment(commit);
-      this.reconcileOperationalState();
-    });
+
+    const ctx = {
+      config: this.config,
+      repositories: this.repositories,
+      bus: this.bus,
+      logger: this.log,
+      dataDir: this.config.app.dataDir,
+    };
+
+    for (const component of this.components) {
+      await component.init(ctx);
+    }
+
+    // VoiceComponent exposes setReconcileCallback so the host drives the state machine
+    const voice = this.findVoiceComponent();
+    if (voice) {
+      voice.setReconcileCallback(() => this.reconcileOperationalState());
+    }
+
     this.bus.onStateChanged((event) => {
       void this.hardware.setState(event.to);
       if (this.currentSession) {
         this.repositories.sessions.updateState(this.currentSession.sessionId, event.to, event.at);
       }
     });
-    this.bus.onSessionEvent((event) => {
-      if (event.type === 'stt_connected' || event.type === 'stt_disconnected') {
-        this.reconcileOperationalState();
-      }
-    });
-    this.bus.onTranscriptPartial(() => {
-      this.reconcileOperationalState();
-    });
-    this.relay.start();
   }
 
   async shutdown(): Promise<void> {
-    await this.capture.stop();
-    this.relay.stop();
+    for (const component of this.components) {
+      await component.shutdown();
+    }
     await this.hardware.shutdown();
     this.db.close();
   }
@@ -75,7 +81,7 @@ export class MeetStationApp {
     const sessionTitle = title?.trim() || 'Founder Fundraising Panel';
     const now = nowIso();
 
-    const session = {
+    const session: SessionSummary = {
       sessionId,
       sessionCode,
       title: sessionTitle,
@@ -99,15 +105,10 @@ export class MeetStationApp {
     });
 
     this.currentSession = session;
-    this.relay.setSession(session);
     this.transition('READY');
     this.emitEvent('pairing_completed', 'info', `Paired session ${sessionId}`, { sessionCode });
 
-    return {
-      success: true,
-      session_id: sessionId,
-      station_token: stationToken,
-    };
+    return { success: true, session_id: sessionId, station_token: stationToken };
   }
 
   async start(): Promise<void> {
@@ -123,7 +124,11 @@ export class MeetStationApp {
     this.currentSession.startedAt = startedAt;
     this.currentSession.stoppedAt = null;
     this.repositories.sessions.markStarted(this.currentSession.sessionId, startedAt, startedAt);
-    await this.capture.start(this.currentSession);
+
+    for (const component of this.components) {
+      await component.startSession(this.currentSession);
+    }
+
     this.transition('RECORDING');
   }
 
@@ -133,7 +138,9 @@ export class MeetStationApp {
       throw new Error(`Cannot pause from state ${state}`);
     }
 
-    await this.capture.pause();
+    for (const component of this.components) {
+      await component.pause();
+    }
     this.transition('PAUSED');
     this.emitEvent('recording_paused', 'info', 'Recording paused');
   }
@@ -143,7 +150,9 @@ export class MeetStationApp {
       throw new Error(`Cannot resume from state ${this.stateMachine.getState()}`);
     }
 
-    await this.capture.resume();
+    for (const component of this.components) {
+      await component.resume();
+    }
     this.reconcileOperationalState();
     this.emitEvent('recording_resumed', 'info', 'Recording resumed');
   }
@@ -154,8 +163,10 @@ export class MeetStationApp {
     }
 
     this.transition('STOPPING');
-    await this.capture.stop();
-    await this.relay.flushOnce();
+
+    for (const component of this.components) {
+      await component.stopSession();
+    }
 
     const stoppedAt = nowIso();
     this.currentSession.stoppedAt = stoppedAt;
@@ -180,11 +191,10 @@ export class MeetStationApp {
     const elapsedMs = Date.now() - new Date(this.currentSession.startedAt).getTime();
     const beforeMs = Math.max(0, elapsedMs - 30000);
     const afterMs = elapsedMs + 30000;
-    const excerpt = this.repositories.transcriptSegments.listWindow(
-      this.currentSession.sessionId,
-      beforeMs,
-      afterMs,
-    ).map((segment) => `${segment.speakerLabel ?? 'Speaker'}: ${segment.text}`).join(' ');
+    const excerpt = this.repositories.transcriptSegments
+      .listWindow(this.currentSession.sessionId, beforeMs, afterMs)
+      .map((segment) => `${segment.speakerLabel ?? 'Speaker'}: ${segment.text}`)
+      .join(' ');
 
     this.repositories.insightMarks.insert({
       id: randomUUID(),
@@ -209,26 +219,48 @@ export class MeetStationApp {
   async simulateNetworkUp(): Promise<void> {
     this.mockIngestAvailable = true;
     this.emitEvent('network_up_simulated', 'info', 'Mock ingest restored');
-    await this.relay.flushOnce();
+    for (const component of this.components) {
+      await component.flush();
+    }
     this.reconcileOperationalState();
   }
 
   async simulateSttDrop(): Promise<void> {
-    await this.capture.setTranscriptConnectionForSimulation(false);
+    const voice = this.findVoiceComponent();
+    if (voice) {
+      await voice.getCaptureService().setTranscriptConnectionForSimulation(false);
+    }
     this.reconcileOperationalState();
   }
 
   async simulateSttReconnect(): Promise<void> {
-    await this.capture.setTranscriptConnectionForSimulation(true);
+    const voice = this.findVoiceComponent();
+    if (voice) {
+      await voice.getCaptureService().setTranscriptConnectionForSimulation(true);
+    }
     this.reconcileOperationalState();
   }
 
   getStatus(): StationStatusResponse {
-    const captureStatus = this.capture.getStatus();
-    const relayStatus = this.relay.getStatus();
+    const voice = this.findVoiceComponent();
+    const captureStatus = voice ? voice.getCaptureService().getStatus() : null;
+    const relayStatus = voice ? voice.getRelayService().getStatus() : null;
+
     const elapsedMs = this.currentSession?.startedAt
       ? Date.now() - new Date(this.currentSession.startedAt).getTime()
       : 0;
+
+    const componentStatuses = this.components.map((c) => {
+      const s = c.getStatus();
+      return {
+        id: s.id,
+        label: s.label,
+        healthy: s.healthy,
+        buffering: s.buffering,
+        queued_items: s.queuedItems,
+        detail: s.detail,
+      };
+    });
 
     return {
       station_id: this.config.app.stationId,
@@ -242,43 +274,45 @@ export class MeetStationApp {
         started_at: this.currentSession?.startedAt ?? null,
         elapsed_ms: elapsedMs,
       },
-      recording: captureStatus.recording,
+      // back-compat fields populated from VoiceComponent — deprecated, read components[] instead
+      recording: captureStatus?.recording ?? false,
       mic: {
-        available: captureStatus.mic.available,
-        source: captureStatus.mic.source,
-        device: captureStatus.mic.device,
-        sample_rate: captureStatus.mic.sampleRate,
-        channels: captureStatus.mic.channels,
-        level_db: captureStatus.mic.levelDb,
+        available: captureStatus ? (this.config.audio.source === 'mock' || captureStatus.recording) : false,
+        source: captureStatus?.mic.source ?? 'none',
+        device: captureStatus?.mic.device ?? 'none',
+        sample_rate: captureStatus?.mic.sampleRate ?? 0,
+        channels: captureStatus?.mic.channels ?? 0,
+        level_db: captureStatus?.mic.levelDb ?? null,
       },
       stt: {
-        provider: captureStatus.stt.provider,
-        connected: captureStatus.stt.connected,
-        last_partial_at: captureStatus.stt.lastPartialAt,
-        last_commit_at: captureStatus.stt.lastCommitAt,
-        committed_segments: captureStatus.stt.committedSegments,
-        current_partial: captureStatus.stt.currentPartial,
+        provider: captureStatus?.stt.provider ?? 'none',
+        connected: captureStatus?.stt.connected ?? false,
+        last_partial_at: captureStatus?.stt.lastPartialAt ?? null,
+        last_commit_at: captureStatus?.stt.lastCommitAt ?? null,
+        committed_segments: captureStatus?.stt.committedSegments ?? 0,
+        current_partial: captureStatus?.stt.currentPartial ?? null,
       },
       relay: {
-        ingest_url: relayStatus.ingestUrl,
-        connected: relayStatus.connected && this.mockIngestAvailable,
-        queued_segments: relayStatus.queuedSegments,
-        sent_segments: relayStatus.sentSegments,
-        dead_segments: relayStatus.deadSegments,
-        last_flush_at: relayStatus.lastFlushAt,
-        last_error: relayStatus.lastError,
+        ingest_url: relayStatus?.ingestUrl ?? this.config.relay.ingestUrl,
+        connected: (relayStatus?.connected ?? false) && this.mockIngestAvailable,
+        queued_segments: relayStatus?.queuedSegments ?? 0,
+        sent_segments: relayStatus?.sentSegments ?? 0,
+        dead_segments: relayStatus?.deadSegments ?? 0,
+        last_flush_at: relayStatus?.lastFlushAt ?? null,
+        last_error: relayStatus?.lastError ?? null,
       },
       buffer: {
-        audio_chunks: captureStatus.buffer.audioChunks,
-        seconds_safe: captureStatus.buffer.secondsSafe,
-        bytes: captureStatus.buffer.bytes,
-        current_chunk_path: captureStatus.buffer.currentChunkPath,
+        audio_chunks: captureStatus?.buffer.audioChunks ?? 0,
+        seconds_safe: captureStatus?.buffer.secondsSafe ?? 0,
+        bytes: captureStatus?.buffer.bytes ?? 0,
+        current_chunk_path: captureStatus?.buffer.currentChunkPath ?? null,
       },
       hardware: {
         enabled: this.config.hardware.enableGpio,
         controller: this.hardware.name,
         last_state: this.hardware.getLastState(),
       },
+      components: componentStatuses,
       last_events: this.repositories.sessionEvents.listRecent(10),
     };
   }
@@ -326,46 +360,53 @@ export class MeetStationApp {
     return [...this.mockIngestSegments];
   }
 
+  private findVoiceComponent(): VoiceComponent | null {
+    const voice = this.components.find((c) => c.id === 'voice');
+    if (!voice) {
+      return null;
+    }
+    // Dynamic import of VoiceComponent for instanceof check avoided — use duck-typing
+    return voice as VoiceComponent;
+  }
+
   private transition(next: Parameters<StationStateMachine['transition']>[0]): void {
     this.stateMachine.transition(next);
   }
 
   private emitEvent(type: string, level: 'info' | 'warn' | 'error', message: string, payload?: Record<string, unknown>): void {
-    const event = {
+    this.bus.emitSessionEvent({
       sessionId: this.currentSession?.sessionId ?? null,
       type,
       level,
       message,
       ...(payload ? { payload } : {}),
-    };
-    this.bus.emitSessionEvent(event);
+    });
   }
 
   private reconcileOperationalState(): void {
     const state = this.stateMachine.getState();
-    const queued = this.relay.getQueuedCount();
-    const recording = this.capture.isRecording();
-    const sttConnected = this.capture.isTranscriptConnected();
 
-    if (!recording || state === 'PAUSED' || state === 'STOPPING' || state === 'REPORT_READY') {
+    if (['PAUSED', 'STOPPING', 'REPORT_READY', 'IDLE', 'PAIRING', 'READY'].includes(state)) {
       return;
     }
 
-    if (!sttConnected || queued > 0 || !this.mockIngestAvailable) {
+    const anyBuffering = this.components.some((c) => c.getStatus().buffering) || !this.mockIngestAvailable;
+
+    if (anyBuffering) {
       if (state === 'RECORDING') {
         this.transition('OFFLINE_BUFFERING');
-      } else if (state === 'SYNCING' && queued > 0) {
+      } else if (state === 'SYNCING') {
         this.transition('OFFLINE_BUFFERING');
       }
       return;
     }
 
-    if (state === 'OFFLINE_BUFFERING' && queued === 0 && sttConnected) {
+    if (state === 'OFFLINE_BUFFERING') {
       this.transition('SYNCING');
       return;
     }
 
-    if (state === 'SYNCING' && queued === 0 && sttConnected) {
+    if (state === 'SYNCING') {
       this.transition('RECORDING');
     }
   }

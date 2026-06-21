@@ -6,6 +6,16 @@
 
 STATUS: DONE
 
+**Prompt:** `devops/ai/prompts/PI_STATION_J3_component_platform.md`
+
+**Job:** Refactor MeetStationApp into a generic component host. VoiceComponent wraps existing capture/relay. VideoComponent stub added. Config-driven registry. 35 tests green.
+
+**Completed:** 2026-06-21
+
+---
+
+## Previous job (J2 — complete)
+
 **Prompt:** `devops/ai/prompts/PI_STATION_J2_pi_provisioning.md`
 
 **Job:** Provision the Raspberry Pi 5, deploy MeetStation, confirm real M-305 audio capture and faster-whisper transcription.
@@ -50,11 +60,9 @@ J1 built the full mock-first MVP in `src/`. All tests green, build clean, mock d
 
 ### Next job
 
-- **J3 — Component platform** (`prompts/PI_STATION_J3_component_platform.md`): refactor MeetStationApp into a host that runs pluggable StationComponents. Voice becomes VoiceComponent; dormant VideoComponent stub added.
+- **J3b — Sync Service** (`prompts/PI_STATION_J3b_sync_service.md`): phased offline→online sync via S3 presigned URLs. Resumable. No data loss.
 
 ### Remaining queued jobs
-
-- **J3 — Component platform** (`prompts/PI_STATION_J3_component_platform.md`): refactor MeetStationApp into a host that runs pluggable components. Voice becomes VoiceComponent; dormant VideoComponent stub.
 - **J3b — Sync Service** (`prompts/PI_STATION_J3b_sync_service.md`): phased offline→online sync via S3 presigned URLs. Resumable. No data loss.
 - **J4 — apm ingest receiver**: manifest + segment + media + sync-complete on PHP/apm side.
 - **J5 — Local STT (faster-whisper)**: post-session batch transcription; local transcript; cloud upgrade flag.

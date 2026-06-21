@@ -23,6 +23,8 @@ import { MockTranscriptProvider } from './capture/MockTranscriptProvider.js';
 import { WavChunkWriter } from './capture/WavChunkWriter.js';
 import { IngestClient } from './relay/IngestClient.js';
 import { RelayService } from './relay/RelayService.js';
+import { VoiceComponent } from './components/voice/VoiceComponent.js';
+import { buildComponentRegistry, parseEnabledComponents } from './components/registry.js';
 import type { AudioSource } from './capture/AudioSource.js';
 import type { TranscriptProvider } from './capture/TranscriptProvider.js';
 
@@ -56,6 +58,7 @@ const stateMachine = new StationStateMachine(bus);
 const hardware = config.hardware.enableGpio
   ? new GpioHardwareController(config.hardware.chip, logger)
   : new ConsoleHardwareController(logger);
+
 const wavWriter = new WavChunkWriter(config, repositories.audioChunks, logger);
 const capture = new CaptureService(
   config,
@@ -70,12 +73,14 @@ const relay = new RelayService(
   repositories,
   new IngestClient(config, logger),
   bus,
-  {
-    onQueueBacklog: () => undefined,
-    onQueueDrained: () => undefined,
-  },
+  { onQueueBacklog: () => undefined, onQueueDrained: () => undefined },
   logger,
 );
+const voice = new VoiceComponent(capture, relay);
+
+const enabledIds = parseEnabledComponents(config.hardware.enabledComponents);
+const components = buildComponentRegistry(enabledIds, voice);
+
 const reportGenerator = new ReportGenerator(config, repositories);
 const app = new MeetStationApp(
   config,
@@ -84,8 +89,7 @@ const app = new MeetStationApp(
   bus,
   stateMachine,
   hardware,
-  capture,
-  relay,
+  components,
   reportGenerator,
   logger,
 );
@@ -96,7 +100,10 @@ await app.initialize();
 
 const server = await buildServer({ app });
 await server.listen({ host: config.server.host, port: config.server.port });
-logger.info({ url: `http://${config.server.host}:${config.server.port}` }, 'MeetPaper Station ready');
+logger.info(
+  { url: `http://${config.server.host}:${config.server.port}`, components: enabledIds },
+  'MeetPaper Station ready',
+);
 
 const shutdown = async (): Promise<void> => {
   logger.info('Shutting down MeetPaper Station');
@@ -105,9 +112,5 @@ const shutdown = async (): Promise<void> => {
   process.exit(0);
 };
 
-process.on('SIGINT', () => {
-  void shutdown();
-});
-process.on('SIGTERM', () => {
-  void shutdown();
-});
+process.on('SIGINT', () => { void shutdown(); });
+process.on('SIGTERM', () => { void shutdown(); });

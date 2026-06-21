@@ -43,3 +43,16 @@
 - **Test results:** API health OK, real 251KB WAV chunk written, faster-whisper transcribed real speech to 4 segments with word timestamps
 - **Confirmed hardware:** M-305 on `plughw:2,0` (card 2), Node 22.23.0, pm2 auto-start via systemd, base.en model (142MB)
 - **Deviations:** username `pistation` not `pi`; hostname `pistation.local` not `pi-station.local`; build on Mac not Pi; audio card 2 not 1
+
+## 2026-06-21 — J3 Generic multi-component platform
+
+- **Start:** 2026-06-21 12:24 BST
+- **End:** 2026-06-21 12:45 BST
+- **Model/provider:** Claude Sonnet 4.6 (Cursor)
+- **Prompt:** `devops/ai/prompts/PI_STATION_J3_component_platform.md`
+- **Outcome:** MeetStation refactored from a voice-only server into a generic component platform. VoiceComponent wraps existing capture/relay. VideoComponent stub added. Host fans out lifecycle to components, aggregates buffering state to drive the state machine. 35/35 tests green.
+- **Files changed:**
+  - New: `src/components/StationComponent.ts`, `components/voice/VoiceComponent.ts`, `components/video/VideoComponent.ts`, `components/registry.ts`, `test/componentHost.test.ts`, `test/aggregateState.test.ts`, `docs/COMPONENTS.md`
+  - Modified: `MeetStationApp.ts` (host refactor), `index.ts` (component wiring), `core/src/config.ts` (ENABLED_COMPONENTS), `shared/src/PlatformConfig.ts`, `core/src/types.ts` (ComponentStatusSummary, components[] in StationStatusResponse), `.env.example`, `public/app.js` + `index.html` + `styles.css` (components row in dashboard), `test/api.smoke.test.ts` (updated for new constructor)
+- **Test results:** 35 tests / 8 files — all green. typecheck clean. build clean.
+- **Design decisions:** host owns state machine and reconciliation; VoiceComponent exposes `setReconcileCallback`; back-compat status fields still populated from VoiceComponent; unknown ENABLED_COMPONENTS id fails loudly at startup.

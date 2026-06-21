@@ -50,6 +50,7 @@ export interface PlatformConfig {
     readonly token: string;
   };
   readonly hardware: {
+    readonly enabledComponents: string;
     readonly enableGpio: boolean;
     readonly chip: string;
     readonly redPin: number;

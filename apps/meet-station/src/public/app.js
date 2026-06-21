@@ -1,4 +1,6 @@
 const statusGrid = document.querySelector('#status-grid');
+const componentsSection = document.querySelector('#components-section');
+const componentsGrid = document.querySelector('#components-grid');
 const transcriptEl = document.querySelector('#transcript');
 const eventsEl = document.querySelector('#events');
 const partialEl = document.querySelector('#partial');
@@ -65,6 +67,8 @@ function renderStatus(status) {
 
   partialEl.textContent = status.stt.current_partial ? `Partial: ${status.stt.current_partial}` : '';
 
+  renderComponents(status.components || []);
+
   if (status.state === 'OFFLINE_BUFFERING') {
     bannerEl.hidden = false;
     bannerEl.className = 'banner banner-offline';
@@ -89,6 +93,31 @@ function renderStatus(status) {
   } else {
     reportLinkEl.textContent = 'No report generated yet.';
   }
+}
+
+function renderComponents(components) {
+  if (!components || components.length === 0) {
+    componentsSection.hidden = true;
+    return;
+  }
+
+  componentsSection.hidden = false;
+  componentsGrid.innerHTML = components.map((c) => {
+    const stateLabel = c.buffering ? 'buffering' : (c.healthy ? 'healthy' : 'degraded');
+    const stateClass = c.buffering ? 'component-buffering' : (c.healthy ? 'component-healthy' : 'component-degraded');
+    const voiceDetail = c.id === 'voice' && c.detail
+      ? `<span class="comp-detail">mic: ${c.detail.mic?.source ?? '—'} &nbsp;|&nbsp; stt: ${c.detail.stt?.provider ?? '—'} &nbsp;|&nbsp; queued: ${c.queued_items}</span>`
+      : `<span class="comp-detail">queued: ${c.queued_items}</span>`;
+    return `
+      <article class="component-card ${stateClass}">
+        <div class="comp-header">
+          <strong class="comp-label">${c.label}</strong>
+          <span class="comp-state">${stateLabel}</span>
+        </div>
+        ${voiceDetail}
+      </article>
+    `;
+  }).join('');
 }
 
 function renderTranscript(segments) {

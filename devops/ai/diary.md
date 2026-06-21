@@ -344,6 +344,46 @@ One Raspberry Pi 5 (4GB) borrowed for the day. Mini USB Mic M-305 available. Hac
 
 ---
 
+## 2026-06-21 — J3 Generic multi-component platform
+
+### Architectural decision
+
+MeetPaper Station was previously a voice-only hardcode — `MeetStationApp` directly held `CaptureService` and `RelayService` and the reconciliation logic assumed a single voice pipeline. J3 turns it into a **generic local capture platform** that hosts one or more independent `StationComponent` instances.
+
+**Why the boundary sits here:** The host owns session lifecycle (pair/start/pause/resume/stop), the state machine, the database, the API server, the network-resilience guarantee (OFFLINE_BUFFERING = any component buffering), and hardware. Components own their capture source, local buffer, cloud relay, and their contribution to the report. This is the minimal boundary that lets voice and video (and future components) coexist without the host knowing their internals.
+
+### What was built
+
+- **`StationComponent` interface** (`apps/meet-station/src/components/StationComponent.ts`): `init`, `startSession`, `pause`, `resume`, `stopSession`, `flush`, `getStatus`, `contributeToReport`, `shutdown`
+- **`ComponentContext`**: config, repositories, bus, logger, dataDir — everything a component needs
+- **`ComponentStatus`**: id, label, healthy, buffering, queuedItems, detail — what the host reads to drive the state machine
+- **`VoiceComponent`** (`components/voice/VoiceComponent.ts`): wraps existing `CaptureService` + `RelayService`. Exposes `setReconcileCallback` so the host can register a trigger for `reconcileOperationalState`. Voice logic is byte-for-byte behaviourally identical — just relocated.
+- **`VideoComponent` stub** (`components/video/VideoComponent.ts`): registers, reports healthy, writes nothing. Proves the seam holds.
+- **Component registry** (`components/registry.ts`): `buildComponentRegistry(ids, voiceInstance)` — unknown ids fail loudly at startup.
+- **`ENABLED_COMPONENTS`** env var (default `voice`): `ENABLED_COMPONENTS=voice,video` boots with dormant video card.
+- **`MeetStationApp` refactored** into a host: constructor takes `StationComponent[]`. Fan-out on all lifecycle calls. `reconcileOperationalState` folds over `components[].getStatus().buffering`.
+- **`/status`** gains `components: ComponentStatusSummary[]` array. Back-compat `mic`/`stt`/`relay`/`buffer` fields still populated from VoiceComponent — marked deprecated.
+- **Dashboard** gains a Components row: one card per component showing healthy/buffering/queued count. Voice card shows mic/stt/queue; video card shows stub note.
+- **2 new test files**: `componentHost.test.ts` (11 tests: registry, VideoComponent lifecycle, fan-out), `aggregateState.test.ts` (17 tests: pure aggregate logic for one and two components, all guarded states).
+- **`docs/COMPONENTS.md`**: how to add a component.
+
+### Numbers
+
+- Tests: **35/35 green** (8 files, up from 33/33)
+- New component files: 5
+- `MeetStationApp.ts`: completely rewritten as host — same external API, no breaking changes to routes
+- Typecheck: clean
+- Build: clean
+
+### Key design choices
+
+- VoiceComponent gets its `CaptureService` and `RelayService` pre-constructed and injected (simpler than building them inside). `index.ts` is the composition root.
+- `reconcileOperationalState` is still on the host (host owns the state machine), not distributed across components.
+- The relay `onQueueBacklog`/`onQueueDrained` callbacks remain no-ops; reconciliation is triggered by bus events via `setReconcileCallback`.
+- Back-compat status fields (`mic`, `stt`, `relay`, `buffer`) populated via `VoiceComponent.getCaptureService()` / `getRelayService()` — duck-typed, no circular dep.
+
+---
+
 ## Open issues
 
 | # | Issue | Status |

@@ -138,6 +138,15 @@ export interface SessionSummary {
   stoppedAt: string | null;
 }
 
+export interface ComponentStatusSummary {
+  id: string;
+  label: string;
+  healthy: boolean;
+  buffering: boolean;
+  queued_items: number;
+  detail: Record<string, unknown>;
+}
+
 export interface StationStatusResponse {
   station_id: string;
   station_name: string;
@@ -187,6 +196,8 @@ export interface StationStatusResponse {
     controller: string;
     last_state: string;
   };
+  /** Each registered component's live status. */
+  components: ComponentStatusSummary[];
   last_events: SessionEventRecord[];
 }
 

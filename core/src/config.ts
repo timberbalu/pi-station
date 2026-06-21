@@ -40,6 +40,7 @@ const envSchema = z.object({
   RELAY_MAX_BACKOFF_MS: z.coerce.number().int().positive().default(30000),
   ENABLE_MOCK_INGEST: z.coerce.boolean().default(true),
   MOCK_INGEST_AVAILABLE: z.coerce.boolean().default(true),
+  ENABLED_COMPONENTS: z.string().min(1).default('voice'),
   ENABLE_GPIO: z.coerce.boolean().default(false),
   GPIO_CHIP: z.string().min(1).default('gpiochip0'),
   GPIO_RED_PIN: z.coerce.number().int().nonnegative().default(17),
@@ -104,6 +105,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): SharedPlatf
       token: env.STATION_PAIRING_TOKEN,
     }),
     hardware: Object.freeze({
+      enabledComponents: env.ENABLED_COMPONENTS,
       enableGpio: env.ENABLE_GPIO,
       chip: env.GPIO_CHIP,
       redPin: env.GPIO_RED_PIN,
